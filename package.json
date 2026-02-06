@@ -1,0 +1,44 @@
+{
+  "name": "destructure",
+  "version": "0.0.0-alpha0",
+  "description": "A library for serialisation and deserialisation of structured data.",
+  "homepage": "https://github.com/NullPointerInclusion/destructure#readme",
+  "author": "Oghenevwegba Obire",
+  "license": "MIT",
+  "keywords": [
+    "destructure",
+    "serialisation",
+    "binary-data",
+    "memory-manipulation",
+    "buffer"
+  ],
+  "type": "module",
+  "main": "dist/destructure.js",
+  "scripts": {
+    "build": "node ./scripts/build.js",
+    "build:watch": "node ./scripts/build-watch.js",
+    "dev": "node ./scripts/dev.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "broadutils": "github:NullPointerInclusion/broadutils"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.5",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3"
+  },
+  "files": [
+    "dist/",
+    "package.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "bugs": {
+    "url": "https://github.com/NullPointerInclusion/destructure/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NullPointerInclusion/destructure.git"
+  }
+}

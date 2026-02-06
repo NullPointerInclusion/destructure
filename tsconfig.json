@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "rootDir": "./src/",
+    "outDir": "./dist/",
+
+    "module": "es2022",
+    "target": "es2022",
+    "moduleResolution": "bundler",
+    "types": [],
+
+    "paths": {
+      "@/*": ["./dist/*"]
+    },
+
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noUncheckedSideEffectImports": true,
+
+    "exactOptionalPropertyTypes": true,
+    "rewriteRelativeImportExtensions": true,
+
+    "strict": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true
+  }
+}
