@@ -1,6 +1,6 @@
-import { array, object } from "broadutils/data";
-import type { OrArray } from "broadutils/types";
-import { nonNullable } from "broadutils/validate";
+import { array, object } from 'broadutils/data';
+import type { OrArray } from 'broadutils/types';
+import { nonNullable } from 'broadutils/validate';
 
 import type {
   CustomStruct,
@@ -12,29 +12,29 @@ import type {
   SimpleStruct,
   SizeOfResult,
   Struct,
-  StructDecodeResult
-} from "./types.ts";
-import { baseSize, destructureSimpleStruct } from "./utils.ts"
+  StructDecodeResult,
+} from './types.ts';
+import { BASE_SIZE, destructureSimpleStruct, numberCoder } from './utils.ts';
 
 const customStructKey = crypto.randomUUID();
 const createStruct = <T extends Struct>(struct: T): T => struct;
-const createCustomStruct = <T>(customStruct: Omit<CustomStruct<T>, "key">) => {
+const createCustomStruct = <T>(customStruct: Omit<CustomStruct<T>, 'key'>) => {
   const key = customStructKey;
-  if (!("key" in customStruct)) return object.mergeInto({ key }, customStruct);
-  throw new Error("The custom struct object must not provide its own key.");
+  if (!('key' in customStruct)) return object.mergeInto({ key }, customStruct);
+  throw new Error('The custom struct object must not provide its own key.');
 };
 const isCustomStruct = (value: unknown): value is CustomStruct<any> => {
   return (
-    typeof value === "object" && value !== null && "key" in value && value.key === customStructKey
+    typeof value === 'object' && value !== null && 'key' in value && value.key === customStructKey
   );
 };
 
 const sizeof = (struct: Struct): SizeOfResult => {
   const result: SizeOfResult = { value: 0, isVariable: false };
   if (isCustomStruct(struct)) return struct.size();
-  if (typeof struct === "string") {
+  if (typeof struct === 'string') {
     const { base, isArray, arrayLength } = destructureSimpleStruct(struct);
-    const bSize = baseSize[base] / 8;
+    const bSize = BASE_SIZE[base] / 8;
     if (isArray) {
       result.value = arrayLength === -1 ? 4 : bSize * arrayLength;
       result.isVariable = arrayLength === -1;
@@ -63,23 +63,6 @@ const arrayof = <T extends Struct>(
     decode: (arr, offset) => ({ value: [], bytesConsumed: 0 }),
     size: () => ({ value: 0, isVariable: true }),
   });
-};
-
-const numberCoder = {
-  encode: (value: number): number[] => {
-    const result: number[] = [];
-    do {
-      result.push(value & 0xff);
-      value = Math.floor(value / 256);
-    } while (value);
-
-    return result;
-  },
-  decode: (value: number[]): number => {
-    let result = 0;
-    for (let i = 0; i < value.length; ) result += (value[i] ?? 0) * 256 ** i++;
-    return result;
-  },
 };
 
 const textEncoder = new TextEncoder();
@@ -113,7 +96,7 @@ const encodeNumber: {
   let encoder: (value: (number | bigint)[]) => number[];
   if (isFloat) {
     if (!(byteLength === 32 || byteLength === 64)) {
-      throw new Error("Invalid bit length for float value.");
+      throw new Error('Invalid bit length for float value.');
     }
 
     const typedArrayClass = globalThis[`Float${byteLength}Array`];
@@ -121,8 +104,8 @@ const encodeNumber: {
       const arr = new typedArrayClass(value.length);
       for (let i = 0; i < value.length; i++) {
         const num = value[i];
-        if (typeof num === "number") arr[i] = num;
-        else throw new Error("Expected number.");
+        if (typeof num === 'number') arr[i] = num;
+        else throw new Error('Expected number.');
       }
 
       return [...new Uint8Array(arr.buffer)];
@@ -131,22 +114,22 @@ const encodeNumber: {
     if (byteLength === 8 || byteLength === 16 || byteLength === 32 || byteLength === 64) {
       const typedArrayName =
         byteLength === 64
-          ? (`Big${isSigned ? "Int" : "Uint"}${byteLength}Array` as const)
-          : (`${isSigned ? "Int" : "Uint"}${byteLength}Array` as const);
+          ? (`Big${isSigned ? 'Int' : 'Uint'}${byteLength}Array` as const)
+          : (`${isSigned ? 'Int' : 'Uint'}${byteLength}Array` as const);
       const typedArrayClass = globalThis[typedArrayName];
       encoder = (value) => {
         const arr = new typedArrayClass(value.length);
         for (let i = 0; i < value.length; i++) {
           const num = value[i];
-          if (byteLength === 64 && typeof num === "bigint") arr[i] = num;
-          else if (typeof num === "number") arr[i] = num;
-          else throw new Error("Expected number.");
+          if (byteLength === 64 && typeof num === 'bigint') arr[i] = num;
+          else if (typeof num === 'number') arr[i] = num;
+          else throw new Error('Expected number.');
         }
 
         return [...new Uint8Array(arr.buffer)];
       };
     } else {
-      throw new TypeError("Unexpected byteLength.");
+      throw new TypeError('Unexpected byteLength.');
     }
   }
 
@@ -156,7 +139,7 @@ const encodeNumber: {
 
   if (_arrayLength === -1) {
     const lengthBytes = array.padEnd(numberCoder.encode(values.length), 4, 0);
-    if (lengthBytes.length > 4) throw new Error("Too many input elements.");
+    if (lengthBytes.length > 4) throw new Error('Too many input elements.');
 
     array.append(result, lengthBytes);
   }
@@ -225,18 +208,18 @@ const decodeNumber: {
       const typedArrayClass = globalThis[`Float${byteLength}Array`];
       result = Array.from(new typedArrayClass(buffer));
     } else {
-      throw new Error("Invalid bit length for float value.");
+      throw new Error('Invalid bit length for float value.');
     }
   } else {
     if (byteLength === 8 || byteLength === 16 || byteLength === 32 || byteLength === 64) {
       const typedArrayName =
         byteLength === 64
-          ? (`Big${isSigned ? "Int" : "Uint"}${byteLength}Array` as const)
-          : (`${isSigned ? "Int" : "Uint"}${byteLength}Array` as const);
+          ? (`Big${isSigned ? 'Int' : 'Uint'}${byteLength}Array` as const)
+          : (`${isSigned ? 'Int' : 'Uint'}${byteLength}Array` as const);
       const typedArrayClass = globalThis[typedArrayName];
       result = Array.from<number | bigint>(new typedArrayClass(buffer));
     } else {
-      throw new Error("Unexpected bit length.");
+      throw new Error('Unexpected bit length.');
     }
   }
 
@@ -249,7 +232,7 @@ const encoder: PrimitiveEncoderMap = {
   char: (value, isArray, arrayLength) => {
     const result: number[] = [];
     if (!isArray) {
-      if (!(typeof value === "string" && value.length === 1)) {
+      if (!(typeof value === 'string' && value.length === 1)) {
         throw new TypeError(
           `Invalid data. Expected string of length 1, got ${Object.toString.call(value)}`,
         );
@@ -261,10 +244,10 @@ const encoder: PrimitiveEncoderMap = {
         throw new TypeError(`Invalid data. Expected an array, got ${Object.toString.call(value)}`);
       }
 
-      let string = "";
+      let string = '';
       for (let i = 0; i < value.length; i++) {
         const char = value[i];
-        if (typeof char !== "string") throw new TypeError("Invalid data type. Expected string.");
+        if (typeof char !== 'string') throw new TypeError('Invalid data type. Expected string.');
         if (char.length !== 1) throw new Error(`A "char" value must be a string of length 1.`);
         string += char;
       }
@@ -273,13 +256,13 @@ const encoder: PrimitiveEncoderMap = {
 
       if (arrayLength === -1) {
         const lengthBytes = array.padEnd(numberCoder.encode(encoded.length), 4, 0);
-        if (lengthBytes.length > 4) throw new Error("Too many elements in input.");
+        if (lengthBytes.length > 4) throw new Error('Too many elements in input.');
 
         array.append(result, lengthBytes, encoded);
       } else {
         array.padEnd(encoded, arrayLength, 0);
         if (encoded.length > arrayLength) {
-          throw new RangeError("Input length exceeded specification.");
+          throw new RangeError('Input length exceeded specification.');
         }
 
         array.append(result, encoded);
@@ -307,7 +290,7 @@ const decoder: PrimitiveDecoderMap = {
     if (!isArray) {
       byteLength = 1;
       const val = arr[currentOffset];
-      if (!val) throw new Error("Unexpected element value.");
+      if (!val) throw new Error('Unexpected element value.');
       return { value: String.fromCharCode(val), bytesConsumed: 1 };
     }
 
@@ -322,7 +305,7 @@ const decoder: PrimitiveDecoderMap = {
 
     const bytes = arr.slice(currentOffset, currentOffset + byteLength);
     const decodedString = textDecoder.decode(new Uint8Array(bytes));
-    const result = decodedString.split("");
+    const result = decodedString.split('');
 
     return { value: result, bytesConsumed: currentOffset + byteLength - offset };
   },
@@ -346,14 +329,14 @@ const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): number[
     if (!pair) continue;
 
     const [_struct, data] = pair;
-    if (typeof _struct === "string") {
+    if (typeof _struct === 'string') {
       const ds = destructureSimpleStruct(_struct);
       result.push(...encoder[ds.base](data, ds.isArray, ds.arrayLength));
     } else if (isCustomStruct(_struct)) {
       result.push(..._struct.encode(data));
-    } else if (typeof _struct === "object") {
-      if (!(data && typeof data === "object")) {
-        throw new TypeError("Struct mismatch.");
+    } else if (typeof _struct === 'object') {
+      if (!(data && typeof data === 'object')) {
+        throw new TypeError('Struct mismatch.');
       }
 
       const structEntries = Object.entries(_struct);
@@ -361,20 +344,20 @@ const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): number[
       const pairs: typeof pairings = [];
 
       if (structEntries.length !== dataEntries.length) {
-        throw new TypeError("Struct mismatch.");
+        throw new TypeError('Struct mismatch.');
       }
 
       for (let i = 0; i < structEntries.length; i++) {
         const se = structEntries[i];
         const de = dataEntries[i];
 
-        if (!se || !de) throw new TypeError("Struct mismatch.");
-        if (se[0] !== de[0]) throw new TypeError("Struct mismatch.");
+        if (!se || !de) throw new TypeError('Struct mismatch.');
+        if (se[0] !== de[0]) throw new TypeError('Struct mismatch.');
         pairs.push([se[1], de[1]]);
       }
 
       pairings.unshift(...pairs);
-    } else throw new TypeError("Invalid Struct.");
+    } else throw new TypeError('Invalid Struct.');
   }
 
   return result;
@@ -382,11 +365,13 @@ const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): number[
 
 const decode = <T extends Struct>(struct: T, buffer: number[], offset = 0): DecodedStruct<T> => {
   const _decode = (s: Struct, buf: number[], off: number): StructDecodeResult<any> => {
-    if (typeof s === "string") {
+    if (typeof s === 'string') {
       const { base, isArray, arrayLength } = destructureSimpleStruct(s);
       return decoder[base](buf, off, isArray, arrayLength);
     } else if (isCustomStruct(s)) {
       return s.decode(buf, off);
+    } else if (Array.isArray(s)) {
+      throw new Error('Not implemented.');
     } else {
       const resultObj: any = {};
       let currentOff = off;
@@ -402,20 +387,20 @@ const decode = <T extends Struct>(struct: T, buffer: number[], offset = 0): Deco
   return _decode(struct, buffer, offset).value;
 };
 
-const x = createStruct({ name: "char[9]", nested: { prop1: "u8", prop2: "i64" } });
-const y = createStruct({ ...x, name: "char[8]" });
+const x = createStruct({ name: 'char[9]', nested: { prop1: 'u8', prop2: 'i64' } });
+const y = createStruct({ ...x, name: 'char[8]' });
 const z = createStruct({ x, y });
 
 const data = {
   x: {
-    name: Array.from("Anonymous"),
+    name: Array.from('Anonymous'),
     nested: {
       prop1: 215,
       prop2: 89n,
     },
   },
   y: {
-    name: Array.from("Somebody"),
+    name: Array.from('Somebody'),
     nested: {
       prop1: 87,
       prop2: 603n,
@@ -426,10 +411,10 @@ const data = {
 const encoded = encode(z, data);
 const decoded = decode(z, encoded);
 
-console.log("Encoded Size:", encoded.length);
+console.log('Encoded Size:', encoded.length);
 console.log(
-  "Decoded Match:",
-  JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() + "n" : v), 2) ===
-    JSON.stringify(decoded, (_, v) => (typeof v === "bigint" ? v.toString() + "n" : v), 2),
+  'Decoded Match:',
+  JSON.stringify(data, (_, v) => (typeof v === 'bigint' ? v.toString() + 'n' : v), 2) ===
+    JSON.stringify(decoded, (_, v) => (typeof v === 'bigint' ? v.toString() + 'n' : v), 2),
 );
-console.log("Decoded Data:", decoded);
+console.log('Decoded Data:', decoded);
