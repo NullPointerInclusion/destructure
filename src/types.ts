@@ -1,16 +1,16 @@
-import type { OrArray } from 'broadutils/types';
+import type { OrArray } from "broadutils/types";
 
 type NumericBitLength = 8 | 16 | 32;
-export type NumericType = `${'u' | 'i'}${NumericBitLength}`;
+export type NumericType = `${"u" | "i"}${NumericBitLength}`;
 
 type BigIntBitLength = 64;
-export type BigIntType = `${'u' | 'i'}${BigIntBitLength}`;
+export type BigIntType = `${"u" | "i"}${BigIntBitLength}`;
 
-export type TextType = 'char';
+export type TextType = "char";
 export type FloatType = `f${32 | 64}`;
 export type PrimitiveType = TextType | NumericType | BigIntType | FloatType;
 
-export type SimpleStruct = `${PrimitiveType}${`[${number | ''}]` | ''}`;
+export type SimpleStruct = `${PrimitiveType}${`[${number | ""}]` | ""}`;
 export type ObjectStruct = { [x: string]: Struct };
 export type Struct = CustomStruct<any> | SimpleStruct | ObjectStruct | Struct[];
 
@@ -22,7 +22,7 @@ export type PrimitiveTypeMap = { [K in TextType]: string } & {
 
 type DecodePrimitive<T extends SimpleStruct> = T extends PrimitiveType
   ? PrimitiveTypeMap[T]
-  : T extends `${infer PT extends PrimitiveType}[${number | ''}]`
+  : T extends `${infer PT extends PrimitiveType}[${number | ""}]`
     ? PrimitiveTypeMap[PT][]
     : never;
 type DecodeTuple<T extends Struct[], Collector extends unknown[] = []> = T extends [
