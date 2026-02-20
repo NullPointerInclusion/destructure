@@ -4,7 +4,7 @@ import type { Struct } from "./types.ts";
 export type StructErrorType = "INVALID_STRUCT" | "RECURSIVE_STRUCT";
 export type ErrorWithDataInit = { message: string; data?: unknown };
 export type DestructureErrorInit = ErrorWithDataInit & { message: string; struct?: Struct };
-export type StructErrorInit = DestructureErrorInit & { type: StructErrorType };
+export type StructErrorInit = DestructureErrorInit & { reason: StructErrorType };
 
 export class ErrorWithData extends Error {
   public readonly data: unknown;
@@ -27,10 +27,10 @@ export class DestructureError extends ErrorWithData {
 }
 
 export class StructError extends DestructureError {
-  public readonly type: StructErrorType;
+  public readonly reason: StructErrorType;
   constructor(init: StructErrorInit) {
     super(init);
-    this.type = init.type;
+    this.reason = init.reason;
   }
 }
 

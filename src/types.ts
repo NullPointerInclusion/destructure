@@ -11,7 +11,7 @@ export type FloatType = `f${32 | 64}`;
 export type PrimitiveType = TextType | NumericType | BigIntType | FloatType;
 
 export type SimpleStruct = `${PrimitiveType}${`[${number | ""}]` | ""}`;
-export type ObjectStruct = { [x: string]: Struct };
+export type ObjectStruct = Readonly<{ [x: string]: Struct }>;
 export type Struct = CustomStruct<any> | SimpleStruct | ObjectStruct | Struct[];
 
 export type PrimitiveTypeMap = { [K in TextType]: string } & {
@@ -43,7 +43,7 @@ export type DecodedStruct<Strct extends Struct> = Strct extends SimpleStruct
           }
         : never;
 
-export type StructDecodeResult<T> = { value: T; bytesConsumed: number };
+export type StructDecodeResult<T> = { value: T; nextOffset: number };
 export type SizeOfResult = { value: number; isVariable: boolean };
 
 export interface DestructuredSimpleStruct {
@@ -52,10 +52,10 @@ export interface DestructuredSimpleStruct {
   arrayLength: number;
 }
 
-export interface CustomStruct<T> {
+export interface CustomStruct<T = any> {
   key: string;
-  encode: (value: T) => number[];
-  decode: (arr: number[], offset: number) => StructDecodeResult<T>;
+  encode: (value: T) => Uint8Array<ArrayBuffer>;
+  decode: (arr: Uint8Array<ArrayBuffer>, offset: number) => StructDecodeResult<T>;
   size: () => SizeOfResult;
 }
 
@@ -63,9 +63,9 @@ export type PrimtiveEncoder<T> = (
   value: OrArray<T>,
   isArray: boolean,
   arrayLength: number,
-) => number[];
+) => Uint8Array<ArrayBuffer>;
 export type PrimtiveDecoder<T> = (
-  arr: number[],
+  buffer: Uint8Array<ArrayBuffer>,
   offset: number,
   isArray: boolean,
   arrayLength: number,
@@ -73,3 +73,14 @@ export type PrimtiveDecoder<T> = (
 
 export type PrimitiveEncoderMap = { [K in PrimitiveType]: PrimtiveEncoder<DecodePrimitive<K>> };
 export type PrimitiveDecoderMap = { [K in PrimitiveType]: PrimtiveDecoder<DecodePrimitive<K>> };
+
+export interface StructInfo<S extends Struct = Struct> {
+  readonly struct: S;
+  readonly isValid: boolean;
+  readonly isPrimitive: boolean;
+  readonly isCustom: boolean;
+  readonly isObject: boolean;
+  readonly isTuple: boolean;
+  readonly isArray: boolean;
+  readonly hasFixedLength: boolean;
+}

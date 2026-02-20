@@ -1,4 +1,11 @@
-import type { DestructuredSimpleStruct, PrimitiveType, SimpleStruct } from "./types.ts";
+import { isCustomStruct, isObjectStruct, isPrimitiveStruct, isTupleStruct } from "./struct.ts";
+import type {
+  DestructuredSimpleStruct,
+  PrimitiveType,
+  SimpleStruct,
+  Struct,
+  StructInfo,
+} from "./types.ts";
 
 export const BASE_SIZE: Record<PrimitiveType, number> = {
   char: 8,
@@ -42,23 +49,27 @@ export const PRIMITIVE_TYPE_REGEX = Object.freeze(
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-export const encodeNumber = (value: number): number[] => {
-  const result: number[] = [];
+// Math.log(256) -> 5.545177444479562
+const getByteCount = (x: number) => +!(x % 256) + Math.ceil(Math.log(x) / 5.545177444479562);
+
+export const encodeNumber = (value: number): Uint8Array<ArrayBuffer> => {
+  const result = new Uint8Array(getByteCount(value));
+  let offset = 0;
 
   do {
-    result.push(value & 0xff);
+    result[offset++] = value & 0xff;
     value = Math.floor(value / 256);
   } while (value);
 
   return result;
 };
-export const decodeNumber = (value: number[]): number => {
+export const decodeNumber = (value: ArrayLike<number>): number => {
   let result = 0;
   for (let i = 0; i < value.length; ) result += (value[i] ?? 0) * 256 ** i++;
   return result;
 };
-export const encodeString = (value: string): number[] => [...textEncoder.encode(value)];
-export const decodeString = (value: number[]): string => textDecoder.decode(new Uint8Array(value));
+export const encodeString = (value: string): Uint8Array<ArrayBuffer> => textEncoder.encode(value);
+export const decodeString = (x: ArrayLike<number>): string => textDecoder.decode(new Uint8Array(x));
 export const getStringCodePoints = (value: string, guardFn?: (cp: number) => number) => {
   const codepoints: number[] = [];
 
@@ -85,4 +96,18 @@ export const destructureSimpleStruct = (struct: SimpleStruct): DestructuredSimpl
     isArray: array != null,
     arrayLength: arrayLength == null ? -1 : +arrayLength,
   };
+};
+
+export const sortObjectKeys = (a: PropertyKey, b: PropertyKey): number => {
+  const _a = String(a);
+  const _b = String(b);
+  if (_a < _b) return -1;
+  if (_a > _b) return 1;
+  return 0;
+};
+
+export const sortObjectEntries = <Key extends PropertyKey, Value>(
+  entries: [Key, Value][],
+): [Key, Value][] => {
+  return entries.sort(([a], [b]) => sortObjectKeys(a, b));
 };

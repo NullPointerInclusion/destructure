@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { createStruct, encode, decode } from "./destructure.ts";
 
 const x = createStruct({ name: "char[9]", nested: { prop1: "u8", prop2: "i64" } });
@@ -27,12 +29,14 @@ const encodeDur = performance.now() - encodeStart;
 const decodeStart = performance.now();
 const decoded = decode(z, encoded);
 const decodeDur = performance.now() - decodeStart;
+const replacer = (_: string, v: any) => (typeof v === "bigint" ? v.toString() + "n" : v);
 
-console.log("Encoded Size:", encoded.length);
-console.log(
-  "Decoded Match:",
-  JSON.stringify(data, (_, v) => (typeof v === "bigint" ? v.toString() + "n" : v), 2) ===
-    JSON.stringify(decoded, (_, v) => (typeof v === "bigint" ? v.toString() + "n" : v), 2),
-);
-console.log("Decoded Data:", decoded);
-console.log("Timings:\n", { encoding: encodeDur, decoding: decodeDur });
+console.log(`
+Encoded Size: ${encoded.length}
+Decoded Match: ${JSON.stringify(data, replacer, 2) === JSON.stringify(decoded, replacer, 2)}
+Decoded Data: ${decoded}
+Timings:
+  encoding: ${encodeDur}
+  decoding: ${decodeDur}
+`);
+console.log(process.getActiveResourcesInfo());

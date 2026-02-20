@@ -2,7 +2,12 @@ import { array } from "broadutils/data";
 import type { OrArray } from "broadutils/types";
 import { encodingError, EncodingError } from "./error.ts";
 import type { DecodedStruct, PrimitiveEncoderMap, Struct } from "./types.ts";
-import { destructureSimpleStruct, encodeNumber, getStringCodePoints } from "./utils.ts";
+import {
+  destructureSimpleStruct,
+  encodeNumber,
+  getStringCodePoints,
+  sortObjectEntries,
+} from "./utils.ts";
 import { isCustomStruct } from "./struct.ts";
 
 const encodeNumberStruct: {
@@ -13,7 +18,7 @@ const encodeNumberStruct: {
     value: OrArray<number>,
     isArray: boolean,
     arrayLength: number,
-  ): number[];
+  ): Uint8Array<ArrayBuffer>;
   <BitLength extends 64>(
     bitLength: BitLength,
     isFloat: boolean,
@@ -21,7 +26,7 @@ const encodeNumberStruct: {
     value: OrArray<number | bigint>,
     isArray: boolean,
     arrayLength: number,
-  ): number[];
+  ): Uint8Array<ArrayBuffer>;
 } = (
   bitLength: number,
   isFloat: boolean,
@@ -29,8 +34,8 @@ const encodeNumberStruct: {
   value: OrArray<number | bigint>,
   isArray: boolean,
   arrayLength: number,
-): number[] => {
-  let encoder: (value: (number | bigint)[]) => number[];
+): Uint8Array<ArrayBuffer> => {
+  let encoder: (value: (number | bigint)[]) => Uint8Array;
   if (isFloat) {
     if (!(bitLength === 32 || bitLength === 64)) {
       throw encodingError("Invalid bit length for float value.");
@@ -45,7 +50,7 @@ const encodeNumberStruct: {
         else throw encodingError("Invalid internal state.");
       }
 
-      return [...new Uint8Array(arr.buffer)];
+      return new Uint8Array(arr.buffer);
     };
   } else {
     if (bitLength === 8 || bitLength === 16 || bitLength === 32 || bitLength === 64) {
@@ -63,7 +68,7 @@ const encodeNumberStruct: {
           else throw encodingError("Invalid internal state.");
         }
 
-        return [...new Uint8Array(arr.buffer)];
+        return new Uint8Array(arr.buffer);
       };
     } else {
       throw encodingError(`Unexpected bit length of ${bitLength}.`);
@@ -72,24 +77,25 @@ const encodeNumberStruct: {
 
   const values = Array.isArray(value) ? value : [value];
   const _arrayLength = isArray ? arrayLength : 1;
-  const result: number[] = [];
 
-  if (_arrayLength === -1) {
-    const lengthBytes = array.padEnd(encodeNumber(values.length), 4, 0);
-    if (lengthBytes.length > 4)
-      throw new EncodingError({
-        message: "Too many input elements.",
-        data: {
-          input: values,
-          expectedInputLength: arrayLength,
-          actualInputLength: values.length,
-        },
-      });
+  const encodedValues = encoder(values);
+  const lengthBytes = _arrayLength === -1 ? encodeNumber(values.length) : new Uint8Array(0);
+  const result = new Uint8Array((lengthBytes.length ? 4 : 0) + encodedValues.length);
 
-    array.append(result, lengthBytes);
-  }
+  if (lengthBytes.length > 4)
+    throw new EncodingError({
+      message: "Too many input elements.",
+      data: {
+        input: values,
+        expectedInputLength: arrayLength,
+        actualInputLength: values.length,
+      },
+    });
 
-  return array.append(result, encoder(values));
+  result.set(lengthBytes, 0);
+  result.set(encodedValues, lengthBytes.length ? 4 : 0);
+
+  return result;
 };
 
 const charGuard = (codepoint: number): number => {
@@ -100,60 +106,55 @@ const charGuard = (codepoint: number): number => {
   );
 };
 
+const encodeOneChar = (char: string): number => {
+  if (typeof char !== "string") {
+    throw encodingError(`Invalid data. Expected string, got ${typeof char}`);
+  }
+
+  const codepoints = getStringCodePoints(char, charGuard);
+  if (codepoints.length === 1) return codepoints[0]!;
+  throw encodingError("char data must be a string with one codepoint.");
+};
+
 export const encoder: PrimitiveEncoderMap & {
-  tuple: (struct: Struct[], value: unknown[]) => number[];
+  tuple: (struct: Struct[], value: unknown[]) => Uint8Array<ArrayBuffer>;
 } = {
   char: (value, isArray, arrayLength) => {
     if (!isArray) {
-      let codepoints: number[];
-      if (typeof value !== "string") {
-        throw encodingError(`Invalid data. Expected string, got ${typeof value}`);
-      }
-      if ((codepoints = getStringCodePoints(value, charGuard)).length !== 1) {
-        throw encodingError("char data must be a string with one codepoint.");
-      }
-      return codepoints;
+      if (typeof value === "string") return new Uint8Array([encodeOneChar(value)]);
+      throw encodingError(`Invalid data. Expected string, got ${typeof value}`);
     }
 
     if (!Array.isArray(value)) {
       throw encodingError(`Invalid data. Expected an array, got ${typeof value}`);
     }
 
-    const result: number[] = [];
-    for (let i = 0; i < value.length; i++) {
-      const char = value[i]!;
-      let codepoints: number[];
-      if (typeof char !== "string") throw encodingError("Invalid data type. Expected string.");
-      if ((codepoints = getStringCodePoints(char, charGuard)).length !== 1) {
-        throw encodingError("char data must be a string with one codepoint.");
-      }
-      array.append(result, codepoints);
-    }
+    const encodedValues = value.map(encodeOneChar);
+    const lengthBytes = arrayLength === -1 ? encodeNumber(encodedValues.length) : new Uint8Array(0);
+    const result = new Uint8Array((lengthBytes.length ? 4 : 0) + encodedValues.length);
 
-    if (arrayLength === -1) {
-      const lengthBytes = array.padEnd(encodeNumber(result.length), 4, 0);
-      if (lengthBytes.length > 4)
-        throw new EncodingError({
-          message: "Too many elements in input.",
-          data: {
-            input: result,
-            expectedArrayLength: arrayLength,
-            actualArrayLength: result.length,
-          },
-        });
-      result.unshift(...lengthBytes);
-    } else {
-      array.padEnd(result, arrayLength, 0);
-      if (result.length > arrayLength)
-        throw new EncodingError({
-          message: "Input length exceeded specification.",
-          data: {
-            input: result,
-            expectedInputLength: arrayLength,
-            actualInputLength: result.length,
-          },
-        });
-    }
+    if (lengthBytes.length > 4)
+      throw new EncodingError({
+        message: "Too many elements in input.",
+        data: {
+          input: value,
+          maxArrayLength: 2 ** 32 - 1,
+          actualArrayLength: encodedValues.length,
+        },
+      });
+
+    if (arrayLength !== -1 && encodedValues.length > arrayLength)
+      throw new EncodingError({
+        message: "Input length exceeded specification.",
+        data: {
+          input: value,
+          expectedInputLength: arrayLength,
+          actualInputLength: encodedValues.length,
+        },
+      });
+
+    result.set(lengthBytes, 0);
+    result.set(encodedValues, lengthBytes.length ? 4 : 0);
 
     return result;
   },
@@ -168,7 +169,8 @@ export const encoder: PrimitiveEncoderMap & {
   f32: (...args) => encodeNumberStruct(32, true, false, ...args),
   f64: (...args) => encodeNumberStruct(64, true, false, ...args),
   tuple: (struct, value) => {
-    const result: number[] = [];
+    const arrays: Uint8Array<ArrayBuffer>[] = [];
+    let totalLength = 0;
 
     if (struct.length !== value.length)
       throw new EncodingError({
@@ -195,16 +197,31 @@ export const encoder: PrimitiveEncoderMap & {
           },
         });
 
-      array.append(result, encode(_struct, _data));
+      const result = encode(_struct, _data);
+      arrays.push(result);
+      totalLength += result.length;
+    }
+
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+
+    for (const arr of arrays) {
+      result.set(arr, offset);
+      offset += arr.length;
     }
 
     return result;
   },
 };
 
-export const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): number[] => {
+export const encode = <T extends Struct>(
+  struct: T,
+  payload: DecodedStruct<T>,
+): Uint8Array<ArrayBuffer> => {
   const pairings: [Struct, any][] = [[struct, payload]];
-  const result: number[] = [];
+  const arrays: Uint8Array<ArrayBuffer>[] = [];
+  let totalLength = 0;
+
   while (pairings.length) {
     const pair = pairings.shift();
     if (!pair) continue;
@@ -212,7 +229,8 @@ export const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): 
     const [_struct, data] = pair;
     if (typeof _struct === "string") {
       const ds = destructureSimpleStruct(_struct);
-      result.push(...encoder[ds.base](data, ds.isArray, ds.arrayLength));
+      const result = encoder[ds.base](data, ds.isArray, ds.arrayLength);
+      totalLength += arrays[arrays.push(result) - 1]!.length;
     } else if (Array.isArray(_struct)) {
       if (!Array.isArray(data)) {
         throw new EncodingError({
@@ -248,8 +266,9 @@ export const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): 
       }
 
       pairings.unshift(...tuplePairings);
-    } else if (isCustomStruct(_struct)) result.push(..._struct.encode(data));
-    else if (typeof _struct === "object") {
+    } else if (isCustomStruct(_struct)) {
+      totalLength += arrays[arrays.push(_struct.encode(data)) - 1]!.length;
+    } else if (typeof _struct === "object") {
       if (!(data && typeof data === "object")) {
         throw new EncodingError({
           message: "Struct mismatch.",
@@ -262,8 +281,8 @@ export const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): 
         });
       }
 
-      const structEntries = Object.entries(_struct);
-      const dataEntries = Object.entries(data);
+      const structEntries = sortObjectEntries(Object.entries(_struct));
+      const dataEntries = sortObjectEntries(Object.entries(data));
       const pairs: typeof pairings = [];
 
       if (structEntries.length !== dataEntries.length) {
@@ -313,6 +332,14 @@ export const encode = <T extends Struct>(struct: T, payload: DecodedStruct<T>): 
         },
       });
     }
+  }
+
+  const result = new Uint8Array(totalLength);
+
+  let offset = 0;
+  for (const array of arrays) {
+    result.set(array, offset);
+    offset += array.length;
   }
 
   return result;

@@ -30,5 +30,5 @@ const sizeof = (struct: Struct): SizeOfResult => {
   return result;
 };
 
-export { createCustomStruct, createStruct, decode, encode, isCustomStruct };
+export { createCustomStruct, createStruct, decode, encode, isCustomStruct, sizeof };
 export type { CustomStruct };

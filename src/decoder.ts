@@ -1,14 +1,13 @@
-import { nonNullable } from "broadutils/validate";
-import { isCustomStruct } from "./struct.ts";
+import { noop } from "broadutils/misc";
 import type { DecodedStruct, PrimitiveDecoderMap, Struct, StructDecodeResult } from "./types.ts";
-import { decodeNumber, decodeString, destructureSimpleStruct } from "./utils.ts";
+import { decodeNumber, decodeString } from "./utils.ts";
 
 const decodeNumberStruct: {
   <BitLength extends 8 | 16 | 32>(
     bitLength: BitLength,
     isFloat: boolean,
     isSigned: boolean,
-    arr: number[],
+    buffer: Uint8Array<ArrayBuffer>,
     offset: number,
     isArray: boolean,
     arrayLength: number,
@@ -17,7 +16,7 @@ const decodeNumberStruct: {
     bitLength: BitLength,
     isFloat: true,
     isSigned: boolean,
-    arr: number[],
+    buffer: Uint8Array<ArrayBuffer>,
     offset: number,
     isArray: boolean,
     arrayLength: number,
@@ -26,7 +25,7 @@ const decodeNumberStruct: {
     bitLength: BitLength,
     isFloat: false,
     isSigned: boolean,
-    arr: number[],
+    buffer: Uint8Array<ArrayBuffer>,
     offset: number,
     isArray: boolean,
     arrayLength: number,
@@ -35,7 +34,7 @@ const decodeNumberStruct: {
   bitLength: number,
   isFloat: boolean,
   isSigned: boolean,
-  arr: number[],
+  buffer: Uint8Array<ArrayBuffer>,
   offset: number,
   isArray: boolean,
   arrayLength: number,
@@ -45,9 +44,8 @@ const decodeNumberStruct: {
 
   if (isArray) {
     if (arrayLength === -1) {
-      const lengthBytes = arr.slice(currentOffset, currentOffset + 4);
+      const lengthBytes = buffer.slice(currentOffset, (currentOffset += 4));
       count = decodeNumber(lengthBytes);
-      currentOffset += 4;
     } else {
       count = arrayLength;
     }
@@ -55,14 +53,25 @@ const decodeNumberStruct: {
 
   const elementSize = bitLength / 8;
   const totalBytes = count * elementSize;
-  const dataBytes = arr.slice(currentOffset, currentOffset + totalBytes);
-  const buffer = new Uint8Array(dataBytes).buffer;
+  const data = buffer.slice(currentOffset, (currentOffset += totalBytes));
+  console.log({
+    bitLength,
+    isFloat,
+    isSigned,
+    buffer,
+    offset,
+    isArray,
+    arrayLength,
+    currentOffset,
+    totalBytes,
+    data,
+  });
 
   let result: any;
   if (isFloat) {
     if (bitLength === 32 || bitLength === 64) {
       const typedArrayClass = globalThis[`Float${bitLength}Array`];
-      result = Array.from(new typedArrayClass(buffer));
+      result = Array.from(new typedArrayClass(data.buffer));
     } else {
       throw new Error("Invalid bit length for float value.");
     }
@@ -73,7 +82,7 @@ const decodeNumberStruct: {
           ? (`Big${isSigned ? "Int" : "Uint"}${bitLength}Array` as const)
           : (`${isSigned ? "Int" : "Uint"}${bitLength}Array` as const);
       const typedArrayClass = globalThis[typedArrayName];
-      result = Array.from<number | bigint>(new typedArrayClass(buffer));
+      result = Array.from<number | bigint>(new typedArrayClass(data.buffer));
     } else {
       throw new Error("Unexpected bit length.");
     }
@@ -81,7 +90,7 @@ const decodeNumberStruct: {
 
   if (!isArray) result = result[0];
 
-  return { value: result, bytesConsumed: currentOffset + totalBytes - offset };
+  return { value: result, nextOffset: currentOffset + totalBytes };
 };
 
 export const decoder: PrimitiveDecoderMap = {
@@ -93,7 +102,7 @@ export const decoder: PrimitiveDecoderMap = {
       byteLength = 1;
       const val = arr[currentOffset];
       if (!val) throw new Error("Unexpected element value.");
-      return { value: String.fromCodePoint(val), bytesConsumed: 1 };
+      return { value: String.fromCodePoint(val), nextOffset: currentOffset + 1 };
     }
 
     if (arrayLength === -1) {
@@ -105,11 +114,11 @@ export const decoder: PrimitiveDecoderMap = {
       byteLength = arrayLength;
     }
 
-    const bytes = arr.slice(currentOffset, currentOffset + byteLength);
+    const bytes = arr.slice(currentOffset, (currentOffset += byteLength));
     const decodedString = decodeString(bytes);
     const result = decodedString.split("");
 
-    return { value: result, bytesConsumed: currentOffset + byteLength - offset };
+    return { value: result, nextOffset: currentOffset };
   },
   u8: (...args) => decodeNumberStruct(8, false, false, ...args),
   u16: (...args) => decodeNumberStruct(16, false, false, ...args),
@@ -125,28 +134,22 @@ export const decoder: PrimitiveDecoderMap = {
 
 export const decode = <T extends Struct>(
   struct: T,
-  buffer: number[],
+  buffer: Uint8Array<ArrayBuffer>,
   offset = 0,
 ): DecodedStruct<T> => {
-  const _decode = (s: Struct, buf: number[], off: number): StructDecodeResult<any> => {
-    if (typeof s === "string") {
-      const { base, isArray, arrayLength } = destructureSimpleStruct(s);
-      return decoder[base](buf, off, isArray, arrayLength);
-    } else if (isCustomStruct(s)) {
-      return s.decode(buf, off);
-    } else if (Array.isArray(s)) {
-      throw new Error("Not implemented.");
-    } else {
-      const resultObj: any = {};
-      let currentOff = off;
-      for (const key in s) {
-        const res = _decode(nonNullable(s[key]), buf, currentOff);
-        resultObj[key] = res.value;
-        currentOff += res.bytesConsumed;
-      }
-      return { value: resultObj, bytesConsumed: currentOff - off };
-    }
+  interface DecoderState {
+    stack: Struct[];
+    stackData: WeakMap<Exclude<Struct, string>, Record<string, any>>;
+    offset: number;
+    lastValue: any;
+  }
+
+  const state: DecoderState = {
+    stack: [struct],
+    stackData: new WeakMap(),
+    offset: offset,
+    lastValue: null,
   };
 
-  return _decode(struct, buffer, offset).value;
+  return "" as any;
 };
