@@ -1,14 +1,21 @@
-import { array } from "broadutils/data";
 import type { OrArray } from "broadutils/types";
 import { encodingError, EncodingError } from "./error.ts";
-import type { DecodedStruct, PrimitiveEncoderMap, Struct } from "./types.ts";
+import type {
+  CustomStruct,
+  Data,
+  ObjectStruct,
+  SimpleStruct,
+  Struct,
+  TupleStruct,
+} from "./struct.ts";
+import { getStructType, StructType } from "./struct.ts";
+import type { PrimitiveEncoderMap } from "./types.ts";
 import {
   destructureSimpleStruct,
   encodeNumber,
   getStringCodePoints,
   sortObjectEntries,
 } from "./utils.ts";
-import { isCustomStruct } from "./struct.ts";
 
 const encodeNumberStruct: {
   <BitLength extends 8 | 16 | 32>(
@@ -35,52 +42,41 @@ const encodeNumberStruct: {
   isArray: boolean,
   arrayLength: number,
 ): Uint8Array<ArrayBuffer> => {
-  let encoder: (value: (number | bigint)[]) => Uint8Array;
-  if (isFloat) {
-    if (!(bitLength === 32 || bitLength === 64)) {
-      throw encodingError("Invalid bit length for float value.");
-    }
-
-    const typedArrayClass = globalThis[`Float${bitLength}Array`];
-    encoder = (value) => {
-      const arr = new typedArrayClass(value.length);
-      for (let i = 0; i < value.length; i++) {
-        const num = value[i];
-        if (typeof num === "number") arr[i] = num;
-        else throw encodingError("Invalid internal state.");
-      }
-
-      return new Uint8Array(arr.buffer);
-    };
-  } else {
-    if (bitLength === 8 || bitLength === 16 || bitLength === 32 || bitLength === 64) {
-      const typedArrayName =
-        bitLength === 64
-          ? (`Big${isSigned ? "Int" : "Uint"}${bitLength}Array` as const)
-          : (`${isSigned ? "Int" : "Uint"}${bitLength}Array` as const);
-      const typedArrayClass = globalThis[typedArrayName];
-      encoder = (value) => {
-        const arr = new typedArrayClass(value.length);
-        for (let i = 0; i < value.length; i++) {
-          const num = value[i];
-          if (bitLength === 64 && typeof num === "bigint") arr[i] = num;
-          else if (typeof num === "number") arr[i] = num;
-          else throw encodingError("Invalid internal state.");
-        }
-
-        return new Uint8Array(arr.buffer);
-      };
+  const values = Array.isArray(value) ? value : [value];
+  const byteLength = bitLength / 8;
+  const bufferSize = byteLength * values.length;
+  const buffer = new Uint8Array(bufferSize);
+  const dv = new DataView(buffer.buffer);
+  let offset = 0;
+  let methodName:
+    | `setFloat${32 | 64}`
+    | `set${"Int" | "Uint"}${8 | 16 | 32}`
+    | `setBig${"Int" | "Uint"}${64}`;
+  {
+    if (isFloat) {
+      if (bitLength === 32) methodName = "setFloat32";
+      else if (bitLength === 64) methodName = "setFloat64";
+      else throw encodingError(`Unexpected bit length of ${bitLength} for floats.`);
     } else {
-      throw encodingError(`Unexpected bit length of ${bitLength}.`);
+      if (bitLength === 8 || bitLength === 16 || bitLength === 32 || bitLength === 64) {
+        methodName =
+          bitLength === 64
+            ? `setBig${isSigned ? "Int" : "Uint"}${bitLength}`
+            : `set${isSigned ? "Int" : "Uint"}${bitLength}`;
+      } else throw encodingError(`Unexpected bit length of ${bitLength}.`);
     }
   }
 
-  const values = Array.isArray(value) ? value : [value];
+  for (const value of values) {
+    // @ts-expect-error
+    dv[methodName](offset, value, true);
+    offset += byteLength;
+  }
+
   const _arrayLength = isArray ? arrayLength : 1;
 
-  const encodedValues = encoder(values);
   const lengthBytes = _arrayLength === -1 ? encodeNumber(values.length) : new Uint8Array(0);
-  const result = new Uint8Array((lengthBytes.length ? 4 : 0) + encodedValues.length);
+  const result = new Uint8Array((lengthBytes.length ? 4 : 0) + buffer.length);
 
   if (lengthBytes.length > 4)
     throw new EncodingError({
@@ -93,7 +89,7 @@ const encodeNumberStruct: {
     });
 
   result.set(lengthBytes, 0);
-  result.set(encodedValues, lengthBytes.length ? 4 : 0);
+  result.set(buffer, lengthBytes.length ? 4 : 0);
 
   return result;
 };
@@ -214,10 +210,7 @@ export const encoder: PrimitiveEncoderMap & {
   },
 };
 
-export const encode = <T extends Struct>(
-  struct: T,
-  payload: DecodedStruct<T>,
-): Uint8Array<ArrayBuffer> => {
+export const encode = <T extends Struct>(struct: T, payload: Data<T>): Uint8Array<ArrayBuffer> => {
   const pairings: [Struct, any][] = [[struct, payload]];
   const arrays: Uint8Array<ArrayBuffer>[] = [];
   let totalLength = 0;
@@ -226,111 +219,81 @@ export const encode = <T extends Struct>(
     const pair = pairings.shift();
     if (!pair) continue;
 
-    const [_struct, data] = pair;
-    if (typeof _struct === "string") {
-      const ds = destructureSimpleStruct(_struct);
-      const result = encoder[ds.base](data, ds.isArray, ds.arrayLength);
-      totalLength += arrays[arrays.push(result) - 1]!.length;
-    } else if (Array.isArray(_struct)) {
-      if (!Array.isArray(data)) {
-        throw new EncodingError({
-          message: "Struct mismatch.",
-          struct: struct,
-          data: {
-            currentStruct: _struct,
-            expectedDataType: "array",
-            actualDataType: typeof data,
-          },
-        });
+    switch (getStructType(pair[0])) {
+      case StructType.Simple: {
+        const ds = destructureSimpleStruct(pair[0] as SimpleStruct);
+        const result = encoder[ds.base](pair[1], ds.isArray, ds.arrayLength);
+        totalLength += result.length;
+        arrays.push(result);
+        break;
       }
+      case StructType.Object: {
+        const structEntries = sortObjectEntries(Object.entries(pair[0] as ObjectStruct));
+        const dataEntries = sortObjectEntries(Object.entries(pair[1]));
+        const pairs: typeof pairings = [];
 
-      const structTuple = _struct;
-      const tuplePairings: typeof pairings = [];
-
-      for (let i = 0; i < structTuple.length; i++) {
-        const _struct = structTuple[i];
-        const _data = data[i];
-
-        if (_struct == null || _data == null)
-          throw new EncodingError({
-            message: "Nullish struct or data",
-            struct: struct,
-            data: {
-              struct: _struct,
-              data: _data,
-              index: i,
-            },
-          });
-
-        tuplePairings.push([_struct, _data]);
-      }
-
-      pairings.unshift(...tuplePairings);
-    } else if (isCustomStruct(_struct)) {
-      totalLength += arrays[arrays.push(_struct.encode(data)) - 1]!.length;
-    } else if (typeof _struct === "object") {
-      if (!(data && typeof data === "object")) {
-        throw new EncodingError({
-          message: "Struct mismatch.",
-          struct: struct,
-          data: {
-            currentStruct: _struct,
-            expectedDataType: "object",
-            actualDataType: typeof data,
-          },
-        });
-      }
-
-      const structEntries = sortObjectEntries(Object.entries(_struct));
-      const dataEntries = sortObjectEntries(Object.entries(data));
-      const pairs: typeof pairings = [];
-
-      if (structEntries.length !== dataEntries.length) {
-        throw new EncodingError({
-          message: "Struct mismatch.",
-          struct: struct,
-          data: {
-            currentStruct: _struct,
-            expectedDataKeys: structEntries.map((e) => e[0]),
-            actualDataKeys: dataEntries.map((e) => e[0]),
-          },
-        });
-      }
-
-      for (let i = 0; i < structEntries.length; i++) {
-        const se = structEntries[i];
-        const de = dataEntries[i];
-
-        if (!se || !de)
-          throw new EncodingError({
-            message: "Nullish struct or data",
-            struct: struct,
-            data: {
-              structEntry: se,
-              dataEntry: de,
-            },
-          });
-        if (se[0] !== de[0])
+        if (structEntries.length !== dataEntries.length) {
           throw new EncodingError({
             message: "Struct mismatch.",
             struct: struct,
             data: {
-              structEntry: se,
-              dataEntry: de,
+              currentStruct: pair[0],
+              expectedDataKeys: structEntries.map((e) => e[0]),
+              actualDataKeys: dataEntries.map((e) => e[0]),
             },
           });
-        pairs.push([se[1], de[1]]);
-      }
+        }
 
-      pairings.unshift(...pairs);
-    } else {
-      throw new EncodingError({
-        message: "Invalid struct.",
-        struct: struct,
-        data: {
-          currentStruct: _struct,
-        },
-      });
+        for (let i = 0; i < structEntries.length; i++) {
+          const se = structEntries[i];
+          const de = dataEntries[i];
+
+          if (!se || !de)
+            throw new EncodingError({
+              message: "Nullish struct or data",
+              struct: struct,
+              data: {
+                structEntry: se,
+                dataEntry: de,
+              },
+            });
+
+          if (se[0] !== de[0])
+            throw new EncodingError({
+              message: "Struct mismatch.",
+              struct: struct,
+              data: {
+                structEntry: se,
+                dataEntry: de,
+              },
+            });
+
+          pairs.push([se[1], de[1]]);
+        }
+
+        pairings.unshift(...pairs);
+        break;
+      }
+      case StructType.Tuple: {
+        const [struct, data] = pair as [TupleStruct, any];
+        pairings.unshift(...struct.map<[Struct, any]>((s, i) => [s, data[i]]));
+        break;
+      }
+      case StructType.Custom: {
+        const result = (pair[0] as CustomStruct).encode(pair[1]);
+        totalLength += result.length;
+        arrays.push(result);
+        break;
+      }
+      default: {
+        throw new EncodingError({
+          message: "Invalid struct.",
+          struct: struct,
+          data: {
+            currentStruct: pair[0],
+          },
+        });
+      }
     }
   }
 

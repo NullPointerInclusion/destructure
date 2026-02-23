@@ -1,18 +1,58 @@
-/// <reference types="node" />
+/// <reference types="bun" />
 
-import { rm, mkdir } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { build as bunBuild, Glob } from "bun";
+import { watchFile } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
 
-export const build = async (watch = false, incremental = false) => {
-  await rm("./tsconfig.tsbuildinfo", { force: true });
-  await rm("./dist/", { force: true, recursive: true });
-  await mkdir("./dist/", { recursive: true });
+export const buildOnce = async () => {
+  await mkdir("./dist", { recursive: true });
 
-  const spawnargs = ["./node_modules/typescript/lib/tsc.js"];
-  watch && spawnargs.push("--watch");
-  incremental && spawnargs.push("--incremental");
+  const glob = new Glob("dist/**/*.js*");
+  const dtsFiles = await Array.fromAsync(glob.scan());
 
-  return spawn("node", spawnargs, { stdio: ["ignore", "inherit", "inherit"] });
+  await Promise.all(dtsFiles.map((filePath) => rm(filePath, { force: true })));
+  await bunBuild({
+    entrypoints: [
+      "./src/decoder.ts",
+      "./src/encoder.ts",
+      "./src/error.ts",
+      "./src/struct.ts",
+      "./src/utils.ts",
+    ],
+    sourcemap: "external",
+    minify: true,
+    outdir: "./dist",
+    target: "browser",
+  });
+
+  return null;
 };
 
-if (import.meta.main) build();
+export const build = async (watch = false) => {
+  if (!watch) return buildOnce();
+
+  let pendingBuild = false;
+  let building = false;
+  const watchCallback = async () => {
+    if (building) {
+      pendingBuild = true;
+      return null;
+    }
+
+    building = true;
+    pendingBuild = false;
+
+    try {
+      await buildOnce();
+    } finally {
+      building = false;
+      pendingBuild && setImmediate(watchCallback);
+    }
+
+    return null;
+  };
+
+  return watchFile("./src", { interval: 100 }, watchCallback);
+};
+
+if (import.meta.main) await build();

@@ -12,7 +12,8 @@ export type PrimitiveType = TextType | NumericType | BigIntType | FloatType;
 
 export type SimpleStruct = `${PrimitiveType}${`[${number | ""}]` | ""}`;
 export type ObjectStruct = Readonly<{ [x: string]: Struct }>;
-export type Struct = CustomStruct<any> | SimpleStruct | ObjectStruct | Struct[];
+export type TupleStruct = Struct[];
+export type Struct = CustomStruct<any> | SimpleStruct | ObjectStruct | TupleStruct;
 
 export type PrimitiveTypeMap = { [K in TextType]: string } & {
   [K in NumericType | FloatType]: number;
@@ -29,9 +30,9 @@ type DecodeTuple<T extends Struct[], Collector extends unknown[] = []> = T exten
   infer Strct extends Struct,
   ...infer Rest extends Struct[],
 ]
-  ? DecodeTuple<Rest, [...Collector, DecodedStruct<Strct>]>
+  ? DecodeTuple<Rest, [...Collector, Data<Strct>]>
   : Collector;
-export type DecodedStruct<Strct extends Struct> = Strct extends SimpleStruct
+export type Data<Strct extends Struct> = Strct extends SimpleStruct
   ? DecodePrimitive<Strct>
   : Strct extends CustomStruct<infer CS>
     ? CS
@@ -39,7 +40,7 @@ export type DecodedStruct<Strct extends Struct> = Strct extends SimpleStruct
       ? DecodeTuple<Strct>
       : Strct extends Struct
         ? {
-            [K in keyof Strct]: DecodedStruct<Strct[K] extends Struct ? Strct[K] : never>;
+            [K in keyof Strct]: Data<Strct[K] extends Struct ? Strct[K] : never>;
           }
         : never;
 
@@ -53,7 +54,6 @@ export interface DestructuredSimpleStruct {
 }
 
 export interface CustomStruct<T = any> {
-  key: string;
   encode: (value: T) => Uint8Array<ArrayBuffer>;
   decode: (arr: Uint8Array<ArrayBuffer>, offset: number) => StructDecodeResult<T>;
   size: () => SizeOfResult;

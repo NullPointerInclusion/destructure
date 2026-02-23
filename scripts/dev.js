@@ -4,12 +4,9 @@ import { spawn } from "node:child_process";
 import { buildWatch } from "./build-watch.js";
 
 export const dev = async () => {
-  const tsc = await buildWatch();
-  const cafe = spawn("node", ["./node_modules/cafe/dist/bin.js"], {
-    stdio: ["ignore", "inherit", "inherit"],
-  });
+  const watcher = await buildWatch();
 
-  return { cafe, tsc };
+  return { watcher };
 };
 
-if (import.meta.main) dev();
+if (import.meta.main) await dev();

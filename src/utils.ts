@@ -1,11 +1,5 @@
-import { isCustomStruct, isObjectStruct, isPrimitiveStruct, isTupleStruct } from "./struct.ts";
-import type {
-  DestructuredSimpleStruct,
-  PrimitiveType,
-  SimpleStruct,
-  Struct,
-  StructInfo,
-} from "./types.ts";
+import type { PrimitiveType, SimpleStruct } from "./struct.ts";
+import type { DestructuredSimpleStruct } from "./types.ts";
 
 export const BASE_SIZE: Record<PrimitiveType, number> = {
   char: 8,
@@ -111,3 +105,5 @@ export const sortObjectEntries = <Key extends PropertyKey, Value>(
 ): [Key, Value][] => {
   return entries.sort(([a], [b]) => sortObjectKeys(a, b));
 };
+
+export type { DestructuredSimpleStruct } from "./types.ts";
