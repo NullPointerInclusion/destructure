@@ -9,7 +9,12 @@ import type {
   Struct,
   TupleStruct,
 } from "./types.ts";
-import { BASE_SIZE, destructureSimpleStruct, PRIMITIVE_TYPE_REGEX } from "./utils.ts";
+import {
+  BASE_SIZE,
+  destructureSimpleStruct,
+  PRIMITIVE_TYPE_REGEX,
+  sortObjectEntries,
+} from "./utils.ts";
 
 const customStructSet: WeakSet<CustomStruct> = new WeakSet();
 const structSet: WeakSet<ObjectStruct | TupleStruct> = new WeakSet();
@@ -38,7 +43,15 @@ export const createStruct = <T extends Struct>(struct: T): T => {
 
     const cloned = clone(struct);
     for (const { value } of object.walk(cloned, { leafPriority: true })) {
-      typeof value === "object" && !structSet.has(value) && structSet.add(Object.freeze(value));
+      if (typeof value !== "object") continue;
+      if (!structSet.has(value)) {
+        if (!Array.isArray(value)) {
+          const entries = sortObjectEntries(Object.entries(value));
+          for (const key in value) delete value[key];
+          object.mergeInto(value, Object.fromEntries(entries));
+        }
+        structSet.add(Object.freeze(value));
+      }
     }
 
     return cloned as T;
