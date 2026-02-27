@@ -142,5 +142,5 @@ vite.config.ts.timestamp-*
 bun.lock
 package-lock.json
 !dist/
-.vscode/
+.vscode/*
 !.vscode/settings.json

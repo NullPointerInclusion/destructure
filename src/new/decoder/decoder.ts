@@ -1,0 +1,112 @@
+import {
+  schema as _schema,
+  SchemaType,
+  type Compiled,
+  type Data,
+  type Schema,
+} from "../schema/schema.ts";
+
+const dvMethodMap = {
+  u8: DataView.prototype.getUint8,
+  u16: DataView.prototype.getUint16,
+  u32: DataView.prototype.getUint32,
+  i8: DataView.prototype.getInt8,
+  i16: DataView.prototype.getInt16,
+  i32: DataView.prototype.getInt32,
+  f32: DataView.prototype.getFloat32,
+  f64: DataView.prototype.getFloat64,
+};
+
+export const decode = <T extends Schema>(
+  schema: T,
+  buffer: Uint8Array<ArrayBuffer>,
+  offset = 0,
+): Data<T> => {
+  type ObjectQueueEntry = ["object", Record<string, any>, string];
+  type ArrayQueueEntry = ["array", any[]];
+  interface DecoderState {
+    stack: Compiled["Schema"][];
+    stackData: WeakMap<Exclude<Compiled["Schema"], string>, Record<string, any>>;
+    processingQueue: (ObjectQueueEntry | ArrayQueueEntry)[];
+    offset: number;
+    result: any;
+  }
+
+  const view = new DataView(buffer.buffer);
+  const state: DecoderState = {
+    stack: [_schema.compile(schema)],
+    stackData: new WeakMap(),
+    processingQueue: [],
+    offset: offset,
+    result: null,
+  };
+  const handleQueue = (value: any): typeof value => {
+    const processingQueue = state.processingQueue;
+    if (!processingQueue.length) return value;
+
+    const entry = processingQueue.shift()!;
+    if (entry[0] === "object") entry[1][entry[2]] = value;
+    else if (entry[0] === "array") entry[1].push(value);
+
+    return value;
+  };
+
+  do {
+    const current = state.stack.shift();
+    if (!current) continue;
+
+    let _value: any = null;
+    switch (current.type) {
+      case SchemaType.Null: {
+        handleQueue((_value = null));
+        break;
+      }
+      case SchemaType.Simple: {
+        if (current.base === "char") {
+          const codepoint = buffer[state.offset++];
+          if (!codepoint) throw new Error("Unexpected element value.");
+          handleQueue((_value = String.fromCharCode(codepoint)));
+        } else {
+          handleQueue((_value = dvMethodMap[current.base].call(view, state.offset, true)));
+          state.offset += current.byteLength;
+        }
+        break;
+      }
+      case SchemaType.Object: {
+        const value: Record<string, any> = {};
+
+        handleQueue((_value = value));
+        state.stack.unshift(...current.entries.map((entry) => entry[1]));
+        state.processingQueue.unshift(
+          ...current.entries.map<ObjectQueueEntry>((entry) => ["object", value, entry[0]]),
+        );
+        break;
+      }
+      case SchemaType.Tuple: {
+        const value: any[] = [];
+        const procEntry = ["array", handleQueue((_value = value))];
+        state.stack.unshift(...current.entries);
+        state.processingQueue.unshift(...new Array(current.entries.length).fill(procEntry));
+        break;
+      }
+      case SchemaType.Array: {
+        const value: any[] = [];
+        const procEntry = ["array", handleQueue((_value = value))];
+        state.stack.unshift(...new Array(current.count).fill(current.schema));
+        state.processingQueue.unshift(...new Array(current.count).fill(procEntry));
+        break;
+      }
+      case SchemaType.Custom: {
+        const { value, nextOffset } = current.handler.decode(buffer, state.offset);
+        state.offset = nextOffset;
+
+        handleQueue((_value = value));
+        break;
+      }
+    }
+
+    state.result === null && (state.result = _value);
+  } while (state.stack.length);
+
+  return state.result;
+};
