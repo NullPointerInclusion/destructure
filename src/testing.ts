@@ -2,7 +2,7 @@
 
 import { inspect } from "node:util";
 import { decode } from "./decoder.ts";
-import { encode } from "./encoder2.ts";
+import { encode } from "./encoder.ts";
 import { createStruct, type Data } from "./struct.ts";
 import { sortObjectEntries } from "./utils.ts";
 

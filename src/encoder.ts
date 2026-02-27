@@ -9,13 +9,40 @@ import type {
   TupleStruct,
 } from "./struct.ts";
 import { getStructType, StructType } from "./struct.ts";
-import type { PrimitiveEncoderMap } from "./types.ts";
+import type { EncoderState, GrowingBuffer, PrimitiveEncoderMap } from "./types.ts";
 import {
   destructureSimpleStruct,
   encodeNumber,
   getStringCodePoints,
   sortObjectEntries,
 } from "./utils.ts";
+
+const createEncoderState = (): EncoderState => ({ buffer: createGrowingBuffer() });
+const createGrowingBuffer = (initialSize = 1024 * 4, growthFactor = 2): GrowingBuffer => {
+  const buffer = new ArrayBuffer(initialSize);
+  return {
+    buffer: buffer,
+    view: new DataView(buffer),
+    growthFactor: growthFactor,
+    offset: 0,
+
+    ensureCapacity(byteLength) {
+      while (this.offset + byteLength > this.buffer.byteLength) {
+        const previousData = new Uint8Array(this.buffer);
+        const newData = new Uint8Array(this.buffer.byteLength * this.growthFactor);
+        newData.set(previousData, 0);
+        this.buffer = newData.buffer;
+      }
+
+      if (this.view.buffer !== this.buffer) this.view = new DataView(this.buffer);
+      return null;
+    },
+
+    normalise() {
+      return this.buffer.slice(0, this.offset);
+    },
+  };
+};
 
 const encodeNumberStruct: {
   <BitLength extends 8 | 16 | 32>(
@@ -25,7 +52,8 @@ const encodeNumberStruct: {
     value: OrArray<number>,
     isArray: boolean,
     arrayLength: number,
-  ): Uint8Array<ArrayBuffer>;
+    state: EncoderState,
+  ): null;
   <BitLength extends 64>(
     bitLength: BitLength,
     isFloat: boolean,
@@ -33,7 +61,8 @@ const encodeNumberStruct: {
     value: OrArray<number | bigint>,
     isArray: boolean,
     arrayLength: number,
-  ): Uint8Array<ArrayBuffer>;
+    state: EncoderState,
+  ): null;
 } = (
   bitLength: number,
   isFloat: boolean,
@@ -41,57 +70,54 @@ const encodeNumberStruct: {
   value: OrArray<number | bigint>,
   isArray: boolean,
   arrayLength: number,
-): Uint8Array<ArrayBuffer> => {
+  state: EncoderState,
+): null => {
+  const buffer = state.buffer;
   const values = Array.isArray(value) ? value : [value];
   const byteLength = bitLength / 8;
-  const bufferSize = byteLength * values.length;
-  const buffer = new Uint8Array(bufferSize);
-  const dv = new DataView(buffer.buffer);
-  let offset = 0;
-  let methodName:
-    | `setFloat${32 | 64}`
-    | `set${"Int" | "Uint"}${8 | 16 | 32}`
-    | `setBig${"Int" | "Uint"}${64}`;
-  {
-    if (isFloat) {
-      if (bitLength === 32) methodName = "setFloat32";
-      else if (bitLength === 64) methodName = "setFloat64";
-      else throw encodingError(`Unexpected bit length of ${bitLength} for floats.`);
+  const shouldEncodeLength = isArray && arrayLength !== -1;
+  const lengthBytes = shouldEncodeLength ? encodeNumber(values.length) : new Uint8Array(0);
+  const totalLength = (shouldEncodeLength ? 4 : 0) + byteLength * values.length;
+  let writer:
+    | DataView[
+        | `setFloat${32 | 64}`
+        | `set${"Int" | "Uint"}${8 | 16 | 32}`
+        | `setBig${"Int" | "Uint"}${64}`]
+    | null = null;
+
+  if (isFloat) {
+    if (bitLength === 32) writer = state.buffer.view.setFloat32;
+    if (bitLength === 64) writer = state.buffer.view.setFloat64;
+  } else {
+    if (isSigned) {
+      if (bitLength === 8) writer = state.buffer.view.setInt8;
+      if (bitLength === 16) writer = state.buffer.view.setInt16;
+      if (bitLength === 32) writer = state.buffer.view.setInt32;
+      if (bitLength === 64) writer = state.buffer.view.setBigInt64;
     } else {
-      if (bitLength === 8 || bitLength === 16 || bitLength === 32 || bitLength === 64) {
-        methodName =
-          bitLength === 64
-            ? `setBig${isSigned ? "Int" : "Uint"}${bitLength}`
-            : `set${isSigned ? "Int" : "Uint"}${bitLength}`;
-      } else throw encodingError(`Unexpected bit length of ${bitLength}.`);
+      if (bitLength === 8) writer = state.buffer.view.setUint8;
+      if (bitLength === 16) writer = state.buffer.view.setUint16;
+      if (bitLength === 32) writer = state.buffer.view.setUint32;
+      if (bitLength === 64) writer = state.buffer.view.setBigUint64;
     }
   }
 
-  for (const value of values) {
-    // @ts-expect-error
-    dv[methodName](offset, value, true);
-    offset += byteLength;
+  if (!writer) throw encodingError("Could not find a valid writer for the given arguments.");
+  if (isArray && arrayLength !== -1 && values.length !== arrayLength) {
+    throw encodingError("Struct mismatch.");
   }
 
-  const _arrayLength = isArray ? arrayLength : 1;
+  buffer.ensureCapacity(totalLength);
+  writer = writer.bind(buffer.view);
 
-  const lengthBytes = _arrayLength === -1 ? encodeNumber(values.length) : new Uint8Array(0);
-  const result = new Uint8Array((lengthBytes.length ? 4 : 0) + buffer.length);
+  for (const num of lengthBytes) buffer.view.setUint8(buffer.offset++, num);
+  for (const value of values) {
+    // @ts-expect-error
+    writer(buffer.offset, value, true);
+    buffer.offset += byteLength;
+  }
 
-  if (lengthBytes.length > 4)
-    throw new EncodingError({
-      message: "Too many input elements.",
-      data: {
-        input: values,
-        expectedInputLength: arrayLength,
-        actualInputLength: values.length,
-      },
-    });
-
-  result.set(lengthBytes, 0);
-  result.set(buffer, lengthBytes.length ? 4 : 0);
-
-  return result;
+  return null;
 };
 
 const charGuard = (codepoint: number): number => {
@@ -112,12 +138,15 @@ const encodeOneChar = (char: string): number => {
   throw encodingError("char data must be a string with one codepoint.");
 };
 
-export const encoder: PrimitiveEncoderMap & {
-  tuple: (struct: Struct[], value: unknown[]) => Uint8Array<ArrayBuffer>;
-} = {
-  char: (value, isArray, arrayLength) => {
+export const encoder: PrimitiveEncoderMap = {
+  char: (value, isArray, arrayLength, state) => {
+    const buffer = state.buffer;
+
     if (!isArray) {
-      if (typeof value === "string") return new Uint8Array([encodeOneChar(value)]);
+      if (typeof value === "string") {
+        buffer.ensureCapacity(1);
+        buffer.view.setUint8(buffer.offset++, encodeOneChar(value));
+      }
       throw encodingError(`Invalid data. Expected string, got ${typeof value}`);
     }
 
@@ -127,7 +156,6 @@ export const encoder: PrimitiveEncoderMap & {
 
     const encodedValues = value.map(encodeOneChar);
     const lengthBytes = arrayLength === -1 ? encodeNumber(encodedValues.length) : new Uint8Array(0);
-    const result = new Uint8Array((lengthBytes.length ? 4 : 0) + encodedValues.length);
 
     if (lengthBytes.length > 4)
       throw new EncodingError({
@@ -139,9 +167,9 @@ export const encoder: PrimitiveEncoderMap & {
         },
       });
 
-    if (arrayLength !== -1 && encodedValues.length > arrayLength)
+    if (arrayLength !== -1 && encodedValues.length !== arrayLength)
       throw new EncodingError({
-        message: "Input length exceeded specification.",
+        message: "Input length did not match specification.",
         data: {
           input: value,
           expectedInputLength: arrayLength,
@@ -149,10 +177,11 @@ export const encoder: PrimitiveEncoderMap & {
         },
       });
 
-    result.set(lengthBytes, 0);
-    result.set(encodedValues, lengthBytes.length ? 4 : 0);
+    buffer.ensureCapacity(lengthBytes.length + encodedValues.length);
+    for (const num of lengthBytes) buffer.view.setUint8(buffer.offset++, num);
+    for (const num of encodedValues) buffer.view.setUint8(buffer.offset++, num);
 
-    return result;
+    return null;
   },
   u8: (...args) => encodeNumberStruct(8, false, false, ...args),
   u16: (...args) => encodeNumberStruct(16, false, false, ...args),
@@ -164,56 +193,14 @@ export const encoder: PrimitiveEncoderMap & {
   i64: (...args) => encodeNumberStruct(64, false, true, ...args),
   f32: (...args) => encodeNumberStruct(32, true, false, ...args),
   f64: (...args) => encodeNumberStruct(64, true, false, ...args),
-  tuple: (struct, value) => {
-    const arrays: Uint8Array<ArrayBuffer>[] = [];
-    let totalLength = 0;
-
-    if (struct.length !== value.length)
-      throw new EncodingError({
-        message: "Tuple length mismatch.",
-        struct: struct,
-        data: {
-          expectedTupleLength: struct.length,
-          actualTupleLength: value.length,
-        },
-      });
-
-    for (let i = 0; i < struct.length; i++) {
-      const _struct = struct[i];
-      const _data = value[i];
-
-      if (_struct == null || _data == null)
-        throw new EncodingError({
-          message: "Nullish struct or data",
-          struct: struct,
-          data: {
-            struct: _struct,
-            data: _data,
-            index: i,
-          },
-        });
-
-      const result = encode(_struct, _data);
-      arrays.push(result);
-      totalLength += result.length;
-    }
-
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-
-    for (const arr of arrays) {
-      result.set(arr, offset);
-      offset += arr.length;
-    }
-
-    return result;
-  },
 };
 
-export const encode = <T extends Struct>(struct: T, payload: Data<T>): Uint8Array<ArrayBuffer> => {
+export const encode = <T extends Struct>(
+  struct: T,
+  payload: Data<T>,
+  state = createEncoderState(),
+): Uint8Array<ArrayBuffer> => {
   const pairings: [Struct, any][] = [[struct, payload]];
-  const arrays: Uint8Array<ArrayBuffer>[] = [];
-  let totalLength = 0;
 
   while (pairings.length) {
     const pair = pairings.shift();
@@ -222,9 +209,7 @@ export const encode = <T extends Struct>(struct: T, payload: Data<T>): Uint8Arra
     switch (getStructType(pair[0])) {
       case StructType.Simple: {
         const ds = destructureSimpleStruct(pair[0] as SimpleStruct);
-        const result = encoder[ds.base](pair[1], ds.isArray, ds.arrayLength);
-        totalLength += result.length;
-        arrays.push(result);
+        const result = encoder[ds.base](pair[1], ds.isArray, ds.arrayLength, state);
         break;
       }
       case StructType.Object: {
@@ -281,8 +266,6 @@ export const encode = <T extends Struct>(struct: T, payload: Data<T>): Uint8Arra
       }
       case StructType.Custom: {
         const result = (pair[0] as CustomStruct).encode(pair[1]);
-        totalLength += result.length;
-        arrays.push(result);
         break;
       }
       default: {
@@ -297,13 +280,5 @@ export const encode = <T extends Struct>(struct: T, payload: Data<T>): Uint8Arra
     }
   }
 
-  const result = new Uint8Array(totalLength);
-
-  let offset = 0;
-  for (const array of arrays) {
-    result.set(array, offset);
-    offset += array.length;
-  }
-
-  return result;
+  return new Uint8Array(state.buffer.normalise());
 };

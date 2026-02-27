@@ -63,7 +63,8 @@ export type PrimtiveEncoder<T> = (
   value: OrArray<T>,
   isArray: boolean,
   arrayLength: number,
-) => Uint8Array<ArrayBuffer>;
+  state: EncoderState,
+) => null;
 export type PrimtiveDecoder<T> = (
   buffer: Uint8Array<ArrayBuffer>,
   offset: number,
@@ -83,4 +84,18 @@ export interface StructInfo<S extends Struct = Struct> {
   readonly isTuple: boolean;
   readonly isArray: boolean;
   readonly hasFixedLength: boolean;
+}
+
+export interface EncoderState {
+  buffer: GrowingBuffer;
+}
+
+export interface GrowingBuffer {
+  buffer: ArrayBuffer;
+  view: DataView<ArrayBuffer>;
+  growthFactor: number;
+  offset: number;
+
+  ensureCapacity(byteLength: number): null;
+  normalise(): ArrayBuffer;
 }
