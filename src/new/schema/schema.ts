@@ -54,7 +54,8 @@ schema.compile = (value: Schema | Compiled["Schema"]): Compiled["Schema"] => {
       const [parent, key, value] = stack.pop()!;
       let compiled: Compiled["Schema"];
 
-      if (typeof value === "string") compiled = schema.compile(value);
+      if (schemaMap.has(value)) compiled = schemaMap.get(value)!;
+      else if (typeof value === "string") compiled = schema.compile(value);
       else if (value === null) compiled = schema.compile(value);
       else if (isCustomSchema(value)) compiled = schema.compile(value);
       else if (Array.isArray(value)) {
@@ -79,11 +80,12 @@ schema.compile = (value: Schema | Compiled["Schema"]): Compiled["Schema"] => {
   return compiled;
 };
 
-export const array = (value: Schema, count: number = -1): Compiled["Array"] => {
+export const array = <T extends Schema>(value: T, count: number = -1): T[] => {
   const compiled = { type: SchemaType.Array, schema: schema.compile(value), count };
+  const placeholderSchema: T[] = [];
 
-  schemaMap.set(value, compiled);
-  return compiled;
+  schemaMap.set(placeholderSchema, compiled);
+  return placeholderSchema;
 };
 
 export const custom = <T>(handler: CustomSchemaHandler<T>): Compiled["Custom"] => {

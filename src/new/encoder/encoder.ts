@@ -62,11 +62,14 @@ export const encode = <T extends Schema>(schema: T, data: Data<T>): Uint8Array<A
       }
       case SchemaType.Array: {
         if (!Array.isArray(payload)) throw new TypeError("data must be an array.");
+        if (schema.count !== -1 && schema.count !== payload.length) {
+          throw new Error("Element count mismatch between schema and data.");
+        }
         if (schema.count === -1) {
-          const encodedLength = coder.encodeNumber(payload.length);
-          if (encodedLength.length > 4) throw new RangeError("Too many elements in input.");
-          buffer.write(encodedLength);
-          buffer.offset += 4 - encodedLength.length;
+          if (payload.length > 2 ** 32 - 1) throw new RangeError("Too many elements in input.");
+          buffer.ensureCapacity(4);
+          buffer.view.setUint32(buffer.offset, payload.length, true);
+          buffer.offset += 4;
         }
         stack.push(...payload.map<StackEntry>((payload) => [schema.schema, payload, {}]).reverse());
         break;

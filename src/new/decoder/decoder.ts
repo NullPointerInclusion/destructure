@@ -92,8 +92,10 @@ export const decode = <T extends Schema>(
       case SchemaType.Array: {
         const value: any[] = [];
         const procEntry = ["array", handleQueue((_value = value))];
-        state.stack.unshift(...new Array(current.count).fill(current.schema));
-        state.processingQueue.unshift(...new Array(current.count).fill(procEntry));
+        const count = current.count === -1 ? view.getUint32(state.offset, true) : current.count;
+        state.offset += +(current.count === -1) * 4;
+        state.stack.unshift(...new Array(count).fill(current.schema));
+        state.processingQueue.unshift(...new Array(count).fill(procEntry));
         break;
       }
       case SchemaType.Custom: {
