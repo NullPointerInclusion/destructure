@@ -53,6 +53,7 @@ type DecodePrimitive<T extends SimpleSchema> = T extends PrimitiveType
   : T extends `${infer PT extends PrimitiveType}[${number | ""}]`
     ? PrimitiveTypeMap[PT][]
     : never;
+
 type DecodeTuple<T extends Schema[], Collector extends unknown[] = []> = any[] extends T
   ? T extends (infer ST extends Schema)[]
     ? Data<ST>[]
@@ -60,6 +61,11 @@ type DecodeTuple<T extends Schema[], Collector extends unknown[] = []> = any[] e
   : T extends [infer Schm extends Schema, ...infer Rest extends Schema[]]
     ? DecodeTuple<Rest, [...Collector, Data<Schm>]>
     : Collector;
+
+type DecodeObject<T extends ObjectSchema> = {
+  [K in keyof T]: Data<T[K] extends Schema ? T[K] : never>;
+};
+
 export type Data<Schm extends Schema> = Schm extends NullSchema
   ? null
   : Schm extends SimpleSchema
@@ -67,9 +73,7 @@ export type Data<Schm extends Schema> = Schm extends NullSchema
     : Schm extends TupleSchema
       ? DecodeTuple<Schm>
       : Schm extends ObjectSchema
-        ? {
-            [K in keyof Schm]: Data<Schm[K] extends Schema ? Schm[K] : never>;
-          }
+        ? DecodeObject<Schm>
         : Schm extends CustomSchemaHandler<infer CS>
           ? CS
           : never;

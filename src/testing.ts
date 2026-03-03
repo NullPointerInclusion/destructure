@@ -1,45 +1,60 @@
 /// <reference types="node" />
 
 import { inspect } from "node:util";
-import { decode } from "./decoder.ts";
-import { encode } from "./encoder.ts";
-import { createStruct, type Data } from "./struct.ts";
-import { sortObjectEntries } from "./utils.ts";
+import { encode } from "./encoder/encoder.ts";
+import { array, schema, type Data, type Schema } from "./schema/schema.ts";
+import { sortObjectEntries } from "./utils/utils.ts";
+import { decode } from "./decoder/decoder.ts";
 
-const x = createStruct({ name: "char[9]", nested: { prop1: "u8", prop2: "i64" } });
-const y = createStruct({ ...x, name: "char[8]" });
-const z = createStruct({ x, y, tuple: ["i8", "i8", { value: "f64" }] as const });
+const s = schema({ name: "char[9]", nested: { prop1: "u8", prop2: "i32" } });
+const z = schema({
+  x: s,
+  y: { ...s, name: "char[8]" },
+  tuple: ["i8", "i8", { value: "f64" }] as const,
+  array: array({ char: "char" }, 5),
+});
 
 const data: Data<typeof z> = {
   x: {
     name: Array.from("Anonymous"),
     nested: {
       prop1: 215,
-      prop2: 89n,
+      prop2: 89,
     },
   },
   y: {
     name: Array.from("Somebody"),
     nested: {
       prop1: 87,
-      prop2: 603n,
+      prop2: 603,
     },
   },
   tuple: [-25, 49, { value: 3.14159 }],
+  array: [{ char: "h" }, { char: "e" }, { char: "l" }, { char: "l" }, { char: "o" }],
 };
 
-decode(z, encode(z, decode(z, encode(z, data))));
+for (let i = 0; i < 100; i++) decode(z, encode(z, data));
 
-const encodeStart = performance.now();
+const timings: [number, number][] = [];
+for (let i = 0; i < 100; i++) {
+  const encodeStart = performance.now();
+  const encoded = encode(z, data);
+  const encodeDur = performance.now() - encodeStart;
+  const decodeStart = performance.now();
+  const decoded = decode(z, encoded);
+  const decodeDur = performance.now() - decodeStart;
+  timings.push([encodeDur, decodeDur]);
+}
+
 const encoded = encode(z, data);
-const encodeDur = performance.now() - encodeStart;
-const decodeStart = performance.now();
 const decoded = decode(z, encoded);
-const decodeDur = performance.now() - decodeStart;
-const replacer = (_: string, v: any) => (typeof v === "bigint" ? v.toString() + "n" : v);
 const getJSONString = (data: object) => {
-  return JSON.stringify(Object.fromEntries(sortObjectEntries(Object.entries(data))), replacer, 2);
+  return JSON.stringify(Object.fromEntries(sortObjectEntries(Object.entries(data))), null, 2);
 };
+
+const avg_timings = timings.reduce((acc, curr) => [acc[0] + curr[0], acc[1] + curr[1]], [0, 0]);
+avg_timings[0] /= timings.length;
+avg_timings[1] /= timings.length;
 
 console.log(`
 Encoded Size: ${encoded.length}
@@ -47,8 +62,6 @@ Decoded Match: ${getJSONString(data) === getJSONString(decoded)}
 Encoded Data: ${inspect(encoded)}
 Decoded Data: ${inspect(decoded)}
 Timings:
-  encoding: ${encodeDur}
-  decoding: ${decodeDur}
+  encoding: ${avg_timings[0]}
+  decoding: ${avg_timings[1]}
 `);
-
-process.nextTick(() => process.exit(0));

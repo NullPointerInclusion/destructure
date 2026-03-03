@@ -16,8 +16,7 @@
   "scripts": {
     "build": "node ./scripts/build.js",
     "build:watch": "node ./scripts/build-watch.js",
-    "dev": "node ./scripts/dev.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node ./scripts/dev.js"
   },
   "exports": {
     "./decode": {

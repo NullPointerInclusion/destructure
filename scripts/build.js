@@ -1,58 +1,72 @@
-/// <reference types="bun" />
+/// <reference types="node" />
 
-import { build as bunBuild, Glob } from "bun";
-import { watchFile } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { access, glob, mkdir, rm, watch } from "node:fs/promises";
+import path from "node:path";
 
-export const buildOnce = async () => {
-  await mkdir("./dist", { recursive: true });
+const rootPath = path.resolve(import.meta.dirname, "..");
+const tsgoPath = path.resolve(
+  rootPath,
+  `node_modules/.bin/tsgo${process.platform === "win32" ? ".exe" : ""}`,
+);
 
-  const glob = new Glob("dist/**/*.js*");
-  const dtsFiles = await Array.fromAsync(glob.scan());
+const hasTsgo = await access(tsgoPath)
+  .then(() => true)
+  .catch(() => false);
 
-  await Promise.all(dtsFiles.map((filePath) => rm(filePath, { force: true })));
-  await bunBuild({
-    entrypoints: [
-      "./src/decoder.ts",
-      "./src/encoder.ts",
-      "./src/error.ts",
-      "./src/struct.ts",
-      "./src/utils.ts",
-    ],
-    sourcemap: "external",
-    minify: true,
-    outdir: "./dist",
-    target: "browser",
-  });
-
+const runTsgo = async () => {
+  execFileSync(tsgoPath, { cwd: rootPath, stdio: "inherit" });
   return null;
 };
 
-export const build = async (watch = false) => {
-  if (!watch) return buildOnce();
+const runTsc = async () => {
+  const isBun = process.isBun;
+  isBun
+    ? spawnSync("bun", ["run", "./node_modules/typescript/lib/tsc.js"], {
+        cwd: rootPath,
+        stdio: "inherit",
+      })
+    : spawnSync("node", ["./node_modules/typescript/lib/tsc.js"], {
+        cwd: rootPath,
+        stdio: "inherit",
+      });
+  return null;
+};
 
-  let pendingBuild = false;
-  let building = false;
-  const watchCallback = async () => {
-    if (building) {
-      pendingBuild = true;
-      return null;
-    }
+export const buildOnce = async () => {
+  console.log(`Starting build process...\n`);
 
-    building = true;
-    pendingBuild = false;
+  console.log(`Ensuring that "dist" exists.\n`);
+  await mkdir("./dist", { recursive: true });
 
-    try {
-      await buildOnce();
-    } finally {
-      building = false;
-      pendingBuild && setImmediate(watchCallback);
-    }
+  const dtsFiles = await Array.fromAsync(glob("dist/**/*.{js,d.ts}*"));
 
-    return null;
-  };
+  console.log(`Removing ${dtsFiles.length} previous build artefacts.\n`);
+  await Promise.all(dtsFiles.map((filePath) => rm(filePath, { force: true })));
 
-  return watchFile("./src", { interval: 100 }, watchCallback);
+  console.log(`Building with ${hasTsgo ? "tsgo" : "tsc"}...\n`);
+  const startTime = performance.now();
+  await (hasTsgo ? runTsgo() : runTsc());
+
+  console.log(`Build complete in ${performance.now() - startTime}ms.`);
+  return null;
+};
+
+export const build = async (watchMode = false) => {
+  if (!watchMode) return buildOnce();
+
+  await buildOnce();
+  for await (const _event of watch(path.resolve(rootPath, "src"), {
+    persistent: true,
+    recursive: true,
+    maxQueue: 1,
+    overflow: "ignore",
+  })) {
+    process.stdout.write("\x1Bc");
+    await buildOnce();
+  }
+
+  return null;
 };
 
 if (import.meta.main) await build();
