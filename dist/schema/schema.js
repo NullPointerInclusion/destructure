@@ -5,8 +5,10 @@ export const SchemaType = {
     Object: 1,
     Tuple: 2,
     Array: 3,
-    Custom: 4,
+    Optional: 4,
+    Custom: 5,
 };
+export const optionalSchemaKey = Symbol.for(crypto.randomUUID());
 const schemaMap = new Map();
 const schemaSet = new Set();
 const customSchema = new Set();
@@ -79,6 +81,14 @@ export const array = (value, count = -1) => {
     const compiled = { type: SchemaType.Array, schema: schema.compile(value), count };
     const placeholderSchema = [];
     schemaMap.set(placeholderSchema, compiled);
+    schemaSet.add(compiled);
+    return placeholderSchema;
+};
+export const optional = (value) => {
+    const placeholderSchema = { [optionalSchemaKey]: true, schema: value };
+    const compiled = { type: SchemaType.Optional, schema: schema.compile(value) };
+    schemaMap.set(placeholderSchema, compiled);
+    schemaSet.add(compiled);
     return placeholderSchema;
 };
 export const custom = (handler) => {
@@ -92,7 +102,7 @@ export const custom = (handler) => {
     const compiled = { type: SchemaType.Custom, handler };
     schemaMap.set(handler, compiled);
     customSchema.add(handler);
-    return compiled;
+    return handler;
 };
 export const isCustomSchema = (value) => {
     return customSchema.has(value);

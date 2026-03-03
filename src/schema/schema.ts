@@ -3,7 +3,7 @@ import {
   PRIMITIVE_TYPES_ARRAY,
   sortObjectEntries,
 } from "../utils/utils.ts";
-import type { Compiled, CustomSchemaHandler, Schema } from "./types.ts";
+import type { Compiled, CustomSchemaHandler, OptionalSchema, Schema } from "./types.ts";
 
 export const SchemaType = {
   Null: -1,
@@ -11,8 +11,11 @@ export const SchemaType = {
   Object: 1,
   Tuple: 2,
   Array: 3,
-  Custom: 4,
+  Optional: 4,
+  Custom: 5,
 } as const;
+
+export const optionalSchemaKey = Symbol.for(crypto.randomUUID());
 
 const schemaMap: Map<Schema, Compiled["Schema"]> = new Map();
 const schemaSet: Set<Compiled["Schema"]> = new Set();
@@ -85,10 +88,20 @@ export const array = <T extends Schema>(value: T, count: number = -1): T[] => {
   const placeholderSchema: T[] = [];
 
   schemaMap.set(placeholderSchema, compiled);
+  schemaSet.add(compiled);
   return placeholderSchema;
 };
 
-export const custom = <T>(handler: CustomSchemaHandler<T>): Compiled["Custom"] => {
+export const optional = <T extends Schema>(value: T): OptionalSchema<T> => {
+  const placeholderSchema: OptionalSchema<T> = { [optionalSchemaKey]: true, schema: value };
+  const compiled = { type: SchemaType.Optional, schema: schema.compile(value) };
+
+  schemaMap.set(placeholderSchema, compiled);
+  schemaSet.add(compiled);
+  return placeholderSchema;
+};
+
+export const custom = <T>(handler: CustomSchemaHandler<T>): CustomSchemaHandler<T> => {
   if (
     !(
       handler.encode &&
@@ -104,7 +117,7 @@ export const custom = <T>(handler: CustomSchemaHandler<T>): Compiled["Custom"] =
   const compiled: Compiled["Custom"] = { type: SchemaType.Custom, handler };
   schemaMap.set(handler, compiled);
   customSchema.add(handler);
-  return compiled;
+  return handler;
 };
 
 export const isCustomSchema = (value: unknown): value is CustomSchemaHandler => {

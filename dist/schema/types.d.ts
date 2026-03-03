@@ -1,5 +1,8 @@
 import type { GrowingBuffer } from "../utils/utils.ts";
-import type { SchemaType as _SchemaTypeMap } from "./schema.ts";
+import { optionalSchemaKey, type SchemaType as _SchemaTypeMap } from "./schema.ts";
+type KeysWithOptionalSchemas<T extends ObjectSchema> = {
+    [K in keyof T]: T[K] extends OptionalSchema<Schema> ? K : never;
+}[keyof T];
 export type PrimitiveType = "char" | `u${8 | 16 | 32}` | `i${8 | 16 | 32}` | `f${32 | 64}`;
 export type PrimitiveTypeMap = {
     char: string;
@@ -36,11 +39,15 @@ export interface Compiled {
         schema: Compiled["Schema"];
         count: number;
     }>;
+    Optional: Readonly<{
+        type: SchemaTypeMap["Optional"];
+        schema: Compiled["Schema"];
+    }>;
     Custom: Readonly<{
         type: SchemaTypeMap["Custom"];
         handler: CustomSchemaHandler;
     }>;
-    Schema: Compiled["Null"] | Compiled["Simple"] | Compiled["Object"] | Compiled["Tuple"] | Compiled["Array"] | Compiled["Custom"];
+    Schema: Compiled["Null"] | Compiled["Simple"] | Compiled["Object"] | Compiled["Tuple"] | Compiled["Array"] | Compiled["Optional"] | Compiled["Custom"];
 }
 export type StructDecodeResult<T> = {
     value: T;
@@ -61,13 +68,19 @@ export type ObjectSchema = Readonly<{
     [x: string]: Schema;
 }>;
 export type TupleSchema = Schema[];
+export type OptionalSchema<T extends Schema> = Readonly<{
+    [optionalSchemaKey]: true;
+    schema: T;
+}>;
 export type NullSchema = null;
 export type Schema = NullSchema | SimpleSchema | ObjectSchema | TupleSchema | CustomSchemaHandler;
 type DecodePrimitive<T extends SimpleSchema> = T extends PrimitiveType ? PrimitiveTypeMap[T] : T extends `${infer PT extends PrimitiveType}[${number | ""}]` ? PrimitiveTypeMap[PT][] : never;
 type DecodeTuple<T extends Schema[], Collector extends unknown[] = []> = any[] extends T ? T extends (infer ST extends Schema)[] ? Data<ST>[] : never : T extends [infer Schm extends Schema, ...infer Rest extends Schema[]] ? DecodeTuple<Rest, [...Collector, Data<Schm>]> : Collector;
 type DecodeObject<T extends ObjectSchema> = {
-    [K in keyof T]: Data<T[K] extends Schema ? T[K] : never>;
+    [K in Exclude<keyof T, KeysWithOptionalSchemas<T>>]: Data<T[K]>;
+} & {
+    [K in KeysWithOptionalSchemas<T>]?: Data<T[K]>;
 };
-export type Data<Schm extends Schema> = Schm extends NullSchema ? null : Schm extends SimpleSchema ? DecodePrimitive<Schm> : Schm extends TupleSchema ? DecodeTuple<Schm> : Schm extends ObjectSchema ? DecodeObject<Schm> : Schm extends CustomSchemaHandler<infer CS> ? CS : never;
+export type Data<Schm extends Schema> = Schm extends NullSchema ? null : Schm extends OptionalSchema<infer T> ? Data<T> | undefined : Schm extends SimpleSchema ? DecodePrimitive<Schm> : Schm extends TupleSchema ? DecodeTuple<Schm> : Schm extends ObjectSchema ? DecodeObject<Schm> : Schm extends CustomSchemaHandler<infer CS> ? CS : never;
 export {};
 //# sourceMappingURL=types.d.ts.map

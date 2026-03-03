@@ -75,11 +75,20 @@ export const decode = (schema, buffer, offset = 0) => {
                 state.processingQueue.unshift(...new Array(count).fill(procEntry));
                 break;
             }
+            case SchemaType.Optional: {
+                const hasData = !!buffer[state.offset++];
+                !hasData && handleQueue((_value = undefined));
+                hasData && state.stack.unshift(current.schema);
+                break;
+            }
             case SchemaType.Custom: {
                 const { value, nextOffset } = current.handler.decode(buffer, state.offset);
                 state.offset = nextOffset;
                 handleQueue((_value = value));
                 break;
+            }
+            default: {
+                throw new TypeError("Unknown schema type.");
             }
         }
         state.result === null && (state.result = _value);

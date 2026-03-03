@@ -5,17 +5,20 @@ export declare const SchemaType: {
     readonly Object: 1;
     readonly Tuple: 2;
     readonly Array: 3;
-    readonly Custom: 4;
+    readonly Optional: 4;
+    readonly Custom: 5;
 };
+export declare const optionalSchemaKey: unique symbol;
 export declare const schema: {
     <T extends Schema>(value: T): T;
     compile: (value: Schema | Compiled["Schema"]) => Compiled["Schema"];
 };
 export declare const array: <T extends Schema>(value: T, count?: number) => T[];
-export declare const custom: <T>(handler: CustomSchemaHandler<T>) => Readonly<{
-    type: 4;
-    handler: CustomSchemaHandler<any>;
+export declare const optional: <T extends Schema>(value: T) => Readonly<{
+    [optionalSchemaKey]: true;
+    schema: T;
 }>;
+export declare const custom: <T>(handler: CustomSchemaHandler<T>) => CustomSchemaHandler<T>;
 export declare const isCustomSchema: (value: unknown) => value is CustomSchemaHandler<any>;
 export type * from "./types.ts";
 //# sourceMappingURL=schema.d.ts.map

@@ -64,6 +64,13 @@ export const encode = (schema, data) => {
                 stack.push(...payload.map((payload) => [schema.schema, payload, {}]).reverse());
                 break;
             }
+            case SchemaType.Optional: {
+                const isSupplied = payload !== undefined;
+                buffer.ensureCapacity(1);
+                buffer.buffer[buffer.offset++] = +isSupplied;
+                isSupplied && stack.push([schema.schema, payload, {}]);
+                break;
+            }
             case SchemaType.Custom: {
                 if ("encodeInto" in schema.handler)
                     schema.handler.encodeInto(buffer, payload);
@@ -72,6 +79,9 @@ export const encode = (schema, data) => {
                     buffer.write(data);
                 }
                 break;
+            }
+            default: {
+                throw new TypeError("Unknown schema type.");
             }
         }
     }
