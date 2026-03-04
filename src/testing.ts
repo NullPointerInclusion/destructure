@@ -2,7 +2,7 @@
 
 import { inspect } from "node:util";
 import { encode } from "./encoder/encoder.ts";
-import { array, optional, schema, type Data, type Schema } from "./schema/schema.ts";
+import { array, optional, schema, string, type Data, type Schema } from "./schema/schema.ts";
 import { sortObjectEntries } from "./utils/utils.ts";
 import { decode } from "./decoder/decoder.ts";
 
@@ -10,6 +10,7 @@ const s = schema({ name: "char[9]", nested: { prop1: "u8", prop2: "i32" } });
 const z = schema({
   x: s,
   y: { ...s, name: "char[8]" },
+  string: [string, array(string, 2)] as const,
   tuple: ["i8", "i8", { value: "f64" }] as const,
   array: array({ char: "char" }, 5),
   optional: optional("u8"),
@@ -33,6 +34,7 @@ const data: Data<typeof z> = {
   tuple: [-25, 49, { value: 3.14159 }],
   array: [{ char: "h" }, { char: "e" }, { char: "l" }, { char: "l" }, { char: "o" }],
   optional: 7,
+  string: ["These", ["are", "strings!"]],
 };
 
 for (let i = 0; i < 100; i++) decode(z, encode(z, data));

@@ -44,7 +44,10 @@ export type SizeOfResult = { value: number; isVariable: boolean };
 export interface CustomSchemaHandler<T = any> {
   encode: (value: T) => Uint8Array<ArrayBuffer>;
   encodeInto?: (buffer: GrowingBuffer, value: T) => null;
-  decode: (arr: Uint8Array<ArrayBuffer>, offset: number) => StructDecodeResult<T>;
+  decode: (
+    bytes: { array: Uint8Array<ArrayBuffer>; view: DataView<ArrayBuffer> },
+    offset: number,
+  ) => StructDecodeResult<T>;
   size: () => SizeOfResult;
 }
 

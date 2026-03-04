@@ -32,7 +32,11 @@ export const decode = <T extends Schema>(
     result: any;
   }
 
-  const view = new DataView(buffer.buffer);
+  const bytes = {
+    array: buffer,
+    view: new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength),
+  };
+  const view = bytes.view;
   const state: DecoderState = {
     stack: [_schema.compile(schema)],
     stackData: new WeakMap(),
@@ -105,7 +109,7 @@ export const decode = <T extends Schema>(
         break;
       }
       case SchemaType.Custom: {
-        const { value, nextOffset } = current.handler.decode(buffer, state.offset);
+        const { value, nextOffset } = current.handler.decode(bytes, state.offset);
         state.offset = nextOffset;
 
         handleQueue((_value = value));

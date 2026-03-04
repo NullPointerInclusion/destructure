@@ -21,8 +21,8 @@ export const PRIMITIVE_TYPE_REGEX = new RegExp(
   "i",
 );
 
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
+export const textEncoder = new TextEncoder();
+export const textDecoder = new TextDecoder();
 
 // Math.log(256) -> 5.545177444479562
 const getByteCount = (x: number) => +!(x % 256) + Math.ceil(Math.log(x) / 5.545177444479562);
