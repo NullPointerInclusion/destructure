@@ -4,6 +4,8 @@ export declare const PRIMITIVE_TYPES_ARRAY: ReadonlyArray<PrimitiveType>;
 export declare const PRIMITIVE_TYPES: ReadonlySet<PrimitiveType>;
 export declare const BITLENGTH_REGEX: RegExp;
 export declare const PRIMITIVE_TYPE_REGEX: RegExp;
+export declare const textEncoder: TextEncoder;
+export declare const textDecoder: TextDecoder;
 export declare const coder: {
     encodeNumber: (value: number) => Uint8Array<ArrayBuffer>;
     decodeNumber: (value: ArrayLike<number>) => number;

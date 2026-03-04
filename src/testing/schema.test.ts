@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 import { decode } from "../decoder/decoder.ts";
 import { encode } from "../encoder/encoder.ts";
-import { array, custom, optional, schema, type Data } from "../schema/schema.ts";
+import { array, custom, optional, schema, string, type Data } from "../schema/schema.ts";
 
 describe("destructure", () => {
   describe("Primitives", () => {
@@ -134,8 +134,8 @@ describe("destructure", () => {
           new DataView(buf.buffer).setBigUint64(0, BigInt(d.getTime()), true);
           return buf;
         },
-        decode: (buf, offset) => {
-          const time = new DataView(buf.buffer).getBigUint64(offset, true);
+        decode: (bytes, offset) => {
+          const time = bytes.view.getBigUint64(offset, true);
           return { value: new Date(Number(time)), nextOffset: offset + 8 };
         },
         size: () => ({ value: 8, isVariable: false }),
@@ -149,6 +149,30 @@ describe("destructure", () => {
       const encoded = encode(s, data);
       const decoded = decode(s, encoded);
       expect(decoded.timestamp.getTime()).toBe(now.getTime());
+    });
+  });
+
+  describe("String", () => {
+    it("should encode and decode a simple string", () => {
+      const data = "Hello, World!";
+      const encoded = encode(string, data);
+      const decoded = decode(string, encoded);
+      expect(decoded).toBe(data);
+    });
+
+    it("should handle empty strings", () => {
+      const data = "";
+      const encoded = encode(string, data);
+      const decoded = decode(string, encoded);
+      expect(decoded).toBe(data);
+      expect(encoded.length).toBe(4);
+    });
+
+    it("should handle multi-byte characters (UTF-8)", () => {
+      const data = "🔥 🚀 🌍";
+      const encoded = encode(string, data);
+      const decoded = decode(string, encoded);
+      expect(decoded).toBe(data);
     });
   });
 

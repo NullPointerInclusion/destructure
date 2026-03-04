@@ -10,7 +10,11 @@ const dvMethodMap = {
     f64: DataView.prototype.getFloat64,
 };
 export const decode = (schema, buffer, offset = 0) => {
-    const view = new DataView(buffer.buffer);
+    const bytes = {
+        array: buffer,
+        view: new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength),
+    };
+    const view = bytes.view;
     const state = {
         stack: [_schema.compile(schema)],
         stackData: new WeakMap(),
@@ -82,7 +86,7 @@ export const decode = (schema, buffer, offset = 0) => {
                 break;
             }
             case SchemaType.Custom: {
-                const { value, nextOffset } = current.handler.decode(buffer, state.offset);
+                const { value, nextOffset } = current.handler.decode(bytes, state.offset);
                 state.offset = nextOffset;
                 handleQueue((_value = value));
                 break;

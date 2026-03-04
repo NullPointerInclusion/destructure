@@ -19,6 +19,7 @@ export declare const optional: <T extends Schema>(value: T) => Readonly<{
     schema: T;
 }>;
 export declare const custom: <T>(handler: CustomSchemaHandler<T>) => CustomSchemaHandler<T>;
+export declare const string: CustomSchemaHandler<string>;
 export declare const isCustomSchema: (value: unknown) => value is CustomSchemaHandler<any>;
 export type * from "./types.ts";
 //# sourceMappingURL=schema.d.ts.map

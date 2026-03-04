@@ -1,4 +1,4 @@
-import { destructureSimpleSchema, PRIMITIVE_TYPES_ARRAY, sortObjectEntries, } from "../utils/utils.js";
+import { destructureSimpleSchema, getStringCodePoints, PRIMITIVE_TYPES_ARRAY, sortObjectEntries, textDecoder, textEncoder, } from "../utils/utils.js";
 export const SchemaType = {
     Null: -1,
     Simple: 0,
@@ -104,6 +104,37 @@ export const custom = (handler) => {
     customSchema.add(handler);
     return handler;
 };
+export const string = custom({
+    encode: (value) => {
+        const encoded = textEncoder.encode(value);
+        if (encoded.length > 2 ** 32 - 1)
+            throw new RangeError("Input length exceeds limit.");
+        const result = new Uint8Array(encoded.length + 4);
+        const view = new DataView(result.buffer);
+        result.set(encoded, 4);
+        view.setUint32(0, encoded.length, true);
+        return result;
+    },
+    decode: (bytes, offset) => {
+        const dataLength = bytes.view.getUint32(offset, true);
+        const dataOffset = offset + 4;
+        return {
+            value: textDecoder.decode(bytes.array.subarray(dataOffset, dataOffset + dataLength)),
+            nextOffset: offset + 4 + dataLength,
+        };
+    },
+    encodeInto: (buffer, value) => {
+        const encoded = textEncoder.encode(value);
+        if (encoded.length > 2 ** 32 - 1)
+            throw new RangeError("Input length exceeds limit.");
+        buffer.ensureCapacity(encoded.length + 4);
+        buffer.view.setUint32(buffer.offset, encoded.length, true);
+        buffer.buffer.set(encoded, (buffer.offset += 4));
+        buffer.offset += encoded.length;
+        return null;
+    },
+    size: () => ({ value: 4, isVariable: true }),
+});
 export const isCustomSchema = (value) => {
     return customSchema.has(value);
 };

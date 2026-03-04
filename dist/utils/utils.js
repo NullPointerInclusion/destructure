@@ -12,8 +12,8 @@ export const PRIMITIVE_TYPES_ARRAY = Object.freeze([
 export const PRIMITIVE_TYPES = new Set(PRIMITIVE_TYPES_ARRAY);
 export const BITLENGTH_REGEX = /(8|16|32|64)$/;
 export const PRIMITIVE_TYPE_REGEX = new RegExp(`^((?:${PRIMITIVE_TYPES_ARRAY.join("|")})+)(\\[([0-9])?\\])?$`, "i");
-const textEncoder = new TextEncoder();
-const textDecoder = new TextDecoder();
+export const textEncoder = new TextEncoder();
+export const textDecoder = new TextDecoder();
 // Math.log(256) -> 5.545177444479562
 const getByteCount = (x) => +!(x % 256) + Math.ceil(Math.log(x) / 5.545177444479562);
 export const coder = {

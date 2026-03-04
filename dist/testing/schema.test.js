@@ -120,8 +120,8 @@ describe("destructure", () => {
                     new DataView(buf.buffer).setBigUint64(0, BigInt(d.getTime()), true);
                     return buf;
                 },
-                decode: (buf, offset) => {
-                    const time = new DataView(buf.buffer).getBigUint64(offset, true);
+                decode: (bytes, offset) => {
+                    const time = bytes.view.getBigUint64(offset, true);
                     return { value: new Date(Number(time)), nextOffset: offset + 8 };
                 },
                 size: () => ({ value: 8, isVariable: false }),
